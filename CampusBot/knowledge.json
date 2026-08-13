@@ -1,0 +1,21 @@
+{
+  "university": {
+    "name": "Shenzhen University",
+    "abbreviation": "SZU",
+    "established": 1983,
+    "motto": "self-reliance, self-discipline, self-improvement",
+    "campuses": [
+      "Yuehai Campus",
+      "Lihu Campus"
+    ]
+  },
+  "library": {
+    "main_branches": [
+      "North Library in Huidian Building, Yuehai Campus",
+      "South Library in Huizhi Building, Yuehai Campus",
+      "Central Library in Qiming Building, Lihu Campus"
+    ],
+    "official_address": "No. 3688 Nanhai Avenue, Nanshan District, Shenzhen, China"
+  }
+}
+
