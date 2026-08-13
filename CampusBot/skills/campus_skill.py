@@ -73,6 +73,14 @@ class CampusSkill(BaseSkill):
         knowledge = (context or {}).get("knowledge", {})
         campus_data = knowledge.get("university") or {}
 
+        '''
+        I modified the code because the actual knowledge.
+        json uses university and library instead of campus_info and library_info. 
+        The original code also required JSON field names to appear directly in the question.
+        For example, founded and established have similar meanings but do not match as strings. 
+        Therefore, I changed it to pass the selected Skill’s relevant data section to the LLM.
+
+        '''
         # EN: Match campus facts (history, architecture, figures, culture) from knowledge base.
         # KO: 지식 베이스에서 캠퍼스 정보(역사, 건축, 인물, 문화) 매칭.
         # ZH: 从知识库检索深大历史、建筑、名人、文化相关的匹配条目

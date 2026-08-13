@@ -33,6 +33,7 @@ class SkillRouter:
 
         #now using Skill keyword
         # Specific Skills must be checked before the general Campus Skill.
+        
         priority = ["translation", "library", "campus"]
 
         for skill_name in priority:
@@ -46,6 +47,23 @@ class SkillRouter:
                 for keyword in skill.keywords
             ):
                 return skill
+
+        '''
+        The original Router duplicated translation and 
+        library keywords directly in router.py and sent 
+        every unmatched request to the Campus Skill. 
+        I updated it to use the keywords defined inside each Skill, 
+        so keyword changes are automatically reflected in routing. 
+        I also added the priority order Translation → Library → Campus 
+        for overlapping matches and changed the default fallback to None 
+        so unrelated requests are not incorrectly routed to the Campus Skill.
+
+        '''
+
+        '''
+        [Known Limitation]
+        Known limitation: The current Router uses deterministic keyword-based rules. It is simple, testable, and works without additional LLM calls, but it may fail to recognize paraphrased, ambiguous, or multilingual requests when no configured keyword matches. A future version could use an LLM-based intent classifier as a fallback.
+        '''
 
         # No matching Skill
         return None
