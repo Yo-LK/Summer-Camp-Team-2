@@ -1,15 +1,15 @@
 ## Restaurant Reservation Agent
 
-### Update along the way
-
+### Project Structure
 restaurant-reservation-agent/
 │
 ├── backend/                          # Python backend: API + Agent + Tools
 │   │
 │   ├── data/                         # CSV databases — the agent's persistent state
-│   │   ├── restaurants.csv           
-│   │   ├── availability.csv          
-│   │   └── reservations.csv         
+│   │   ├── restaurants.csv           # Static catalog: restaurant names, cuisines, locations, prices, ratings, total tables
+│   │   ├── availability.csv          # Mutable capacity ledger: per-slot table counts, decremented on each booking
+│   │   └── reservations.csv          # Mutable booking log: confirmed reservations appended by make_reservation
+│   │
 │   ├── tools/                        # Tool implementations — pure functions that read/write CSVs
 │   │   ├── search_restaurants.py     # Tool 1: Filters restaurants.csv by location, cuisine, price_range; returns matching list
 │   │   ├── check_availability.py     # Tool 2: Looks up one row in availability.csv; returns whether slot has capacity
@@ -22,9 +22,11 @@ restaurant-reservation-agent/
 │   │
 │   ├── api/                          # HTTP layer — bridges the frontend to the agent
 │   │   ├── routes.py                 # FastAPI endpoint definitions: E.g. /chat, /select, /restaurants, /health
-│   │   └── models.py                 # Pydantic request/response contracts: ChatRequest, SelectRequest, AgentState 
+│   │   └── models.py                 # Pydantic request/response contracts: ChatRequest, SelectRequest, AgentState
+│   │
 │   ├── app.py                        # FastAPI application factory: assembles routes, CORS, middleware
-│   └── main.py                       # Entry point
+│   └── main.py                       # Entry point: launches the uvicorn server
+│
 ├── frontend/                         # Static web UI — renders the agent's reasoning trace and chat interface
 │   ├── index.html                    # Main page shell: split-pane layout (chat left, ReAct trace right)
 │   ├── styles.css                    # Styling for chat bubbles, trace cards, choice buttons, and layout
