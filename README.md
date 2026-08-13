@@ -1,17 +1,15 @@
 ## Restaurant Reservation Agent
 
 ### Project Structure
+
 restaurant-reservation-agent/
-│
 ├── backend/                          # Python backend: API + Agent + Tools
-│   │
 │   ├── data/                         # CSV databases — the agent's persistent state
-│   │   ├── restaurants.csv           # Static catalog: restaurant names, cuisines, locations, prices, ratings, total tables
-│   │   ├── availability.csv          # Mutable capacity ledger: per-slot table counts, decremented on each booking
-│   │   └── reservations.csv          # Mutable booking log: confirmed reservations appended by make_reservation
-│   │
+│   │   ├── restaurants.csv         
+│   │   ├── availability.csv          
+│   │   └── reservations.csv          
 │   ├── tools/                        # Tool implementations — pure functions that read/write CSVs
-│   │   ├── search_restaurants.py     # Tool 1: Filters restaurants.csv by location, cuisine, price_range; returns matching list
+│   │   ├── search_restaurants.py     # Tool 1: Filters restaurants.csv by location, cuisine, price_range
 │   │   ├── check_availability.py     # Tool 2: Looks up one row in availability.csv; returns whether slot has capacity
 │   │   └── make_reservation.py       # Tool 3: Validates capacity, appends to reservations.csv, decrements availability.csv
 │   │
@@ -21,7 +19,7 @@ restaurant-reservation-agent/
 │   │   └── schemas.py                # Pydantic models defining the shape of tool inputs/outputs
 │   │
 │   ├── api/                          # HTTP layer — bridges the frontend to the agent
-│   │   ├── routes.py                 # FastAPI endpoint definitions: E.g. /chat, /select, /restaurants, /health
+│   │   ├── routes.py                 # FastAPI endpoint definitions: /chat, /select, /restaurants, /health
 │   │   └── models.py                 # Pydantic request/response contracts: ChatRequest, SelectRequest, AgentState
 │   │
 │   ├── app.py                        # FastAPI application factory: assembles routes, CORS, middleware
@@ -33,8 +31,8 @@ restaurant-reservation-agent/
 │   └── app.js                        # Frontend logic: sends API requests, renders agent state, handles user choices
 │
 ├── tests/                            # Unit tests for tools and agent logic
-│   ├── test_tools.py                 # Tests for search_restaurants, check_availability, make_reservation against mock CSVs
-│   └── test_agent.py                 # Tests for the ReAct loop: happy path, unavailable time, alternative selection flow
+│   ├── test_tools.py                 # Tests for search_restaurants, check_availability, make_reservation
+│   └── test_agent.py                 # Tests for the ReAct loop: happy path, unavailable time, alternative selection
 │
 ├── requirements.txt                  # Python dependency list: fastapi, uvicorn, pydantic
 └── README.md                         # Project overview, setup instructions, and demo scenario descriptions
