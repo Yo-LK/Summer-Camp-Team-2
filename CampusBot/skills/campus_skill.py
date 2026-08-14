@@ -1,54 +1,55 @@
-# skills/library_skill.py
+# skills/campus_skill.py
 from typing import Any, Dict, Optional
 from .base import BaseSkill
 
 
-class LibrarySkill(BaseSkill):
+class CampusSkill(BaseSkill):
 
     def __init__(self):
         super().__init__(
-            name="library",
-            # EN: [1. Clarify responsibility: SZU Library collection, campuses library types/count, opening hours, booking, and visiting]
-            # KO: [1. 책임 명확화: 심천대학 도서관 장서, 캠퍼스별 도서관 종류 및 수, 개관 시간, 예약 및 방문 문의 처리]
-            # ZH: 【1. 明确职责：负责解答深大图书馆藏书、各校区图书馆种类与数量、开放时间、座位/场地预约及参观指引】
+            name="campus",
+            # EN: [1. Clarify responsibility: History, architecture, landmark figures, president, and culture of SZU]
+            # KO: [1. 책임 명확화: 심천대학의 역사, 건축, 명사, 총장 및 문화 관련 질의 처리]
+            # ZH: 【1. 明确职责：负责解答深圳大学的历史、建筑、校园文化、校长与校友/名人相关问题】
             description=(
-                "Handles queries related to Shenzhen University (SZU) Library system, including book collections, "
-                "types and counts of libraries across campuses (Yuehai and Lihu), opening hours, seat/space booking methods, and campus visit regulations. "
-                "Matched keywords: library, szu library, book collection, opening hours, booking, reserve seat, visit library, yuehai library, lihu library."
+                "Handles queries related to Shenzhen University (SZU) history, architectural design, landmarks, "
+                "notable alumni/professors, president, school culture, motto, and overall campus heritage. "
+                "Matched keywords: shenzhen university, szu, history, architecture, building, alumni, culture, landmark, motto, president."
             ),
             keywords=[
-                "library",
-                "szu library",
-                "book",
-                "collection",
-                "opening hours",
-                "open time",
-                "booking",
-                "reservation",
-                "reserve seat",
-                "visit",
-                "visitor",
-                "yuehai library",
-                "lihu library",
-                "curator",
+                "shenzhen university",
+                "szu",
+                "history",
+                "architecture",
+                "building",
+                "building name",
+                "landmark",
+                "alumni",
+                "famous figure",
+                "professor",
+                "president",
+                "校长",
+                "culture",
+                "motto",
+                "campus",
             ],
         )
 
     def get_system_prompt(self) -> str:
-        # EN: [2. System Prompt: Professional librarian persona, step-by-step reasoning, user language matching, and courteous tone]
-        # KO: [2. 시스템 프롬프트: 전문 사서 페르소나, 단계별 추론, 질문 언어 맞춤, 품격 있는 어조]
-        # ZH: 【2. System Prompt：优雅有风度的深大图书管理员角色、逐步推理、提问语言自适应与耐心得体的回答】
+        # EN: [2. System Prompt: Professional guide persona, step-by-step reasoning, user language matching, and polite tone]
+        # KO: [2. 시스템 프롬프트: 전문 안내원 페르소나, 단계별 추론, 질문 언어 맞춤 및 품격 있는 어조]
+        # ZH: 【2. System Prompt：优雅风度的深大讲解员角色、逐步推理、提问语言自适应与彬彬有礼的回答】
         return (
-            "[Shenzhen University Professional Librarian Instructions]\n"
+            "[Shenzhen University Professional Campus Guide Instructions]\n"
             "Role & Persona:\n"
-            "You are a courteous, scholarly, and patient official librarian of Shenzhen University (SZU) Library. "
-            "Your tone is warm, polite, and refined (符合有风度的图书管理员，语气富有耐性，言语得体).\n\n"
+            "You are an elegant, patient, and highly articulate official tour guide of Shenzhen University (SZU). "
+            "Your speech is polished, welcoming, and refined (符合有风度的讲解员，语气富有耐性，言语得体).\n\n"
             "Core Guidelines:\n"
-            "1. Factuality & Honesty: Provide accurate information regarding SZU library collections, campus library distributions (e.g., Yuehai & Lihu campuses), opening schedules, seat/space reservations, and visitor policies strictly based on the [Reference Knowledge]. "
-            "Never fabricate or guess answers. If information is missing or unavailable, tactfully and truthfully express that you do not know in the user's language.\n"
+            "1. Factuality & Honesty: Answer questions about SZU culture, history, buildings, president, and notable figures strictly based on the [Reference Knowledge]. "
+            "Never fabricate or guess answers (e.g., if asked about the president and data is absent, do not guess). If information is missing, tactful and truthful admission of not knowing in the user's language is mandatory.\n"
             "2. Language Consistency Rule (语言一致性规则): You MUST detect and respond in the EXACT SAME LANGUAGE as the user's question (e.g., respond in Chinese if asked in Chinese, respond in English if asked in English, etc.).\n"
-            "3. Step-by-Step Reasoning (CoT): Think step-by-step before addressing the query to analyze user focus (e.g., collection search, booking workflow, campus-specific opening hours, or guest visitation protocols).\n"
-            "4. Exceptional Guidance: In case of missing input, error, or ambiguous requests, offer helpful guidance gracefully without abruptly halting the reasoning process."
+            "3. Step-by-Step Reasoning (CoT): Think step-by-step before answering to analyze the user's focus (e.g., historical timeline, architectural significance, leadership/figures, or figure background).\n"
+            "4. Exceptional Guidance: In cases of error, missing knowledge, or ambiguous input, offer graceful guidance and hints without stopping the reasoning process abruptly."
         )
 
     def process(
@@ -56,61 +57,61 @@ class LibrarySkill(BaseSkill):
     ) -> Dict[str, Any]:
         # EN: [3. Clear Input Definition: Validate and clean input text and context structured dict]
         # KO: [3. 명확한 입력 정의: 입력 텍스트 및 컨텍스트 구조 검증 및 정제]
-        # ZH: 【3. 定义清晰的输入：对 user_input 与 context 进行类型限定与空值校验】
+        # ZH: 【3. 定义清晰的输入：对 user_input 与 context 进行校验与类型限定】
         if not user_input or not isinstance(user_input, str):
-            # EN: [5. Exception Guidance: Handle empty or invalid input gracefully with librarian greeting]
-            # KO: [5. 예외 상황 안내: 생각 프로세스를 임의로 중단하지 않고 사서의 입장에서 친절하게 입력 유도]
-            # ZH: 【5. 异常情况引导：对空输入/无效输入提供图书管理员式的专业引导，不可随意停止】
+            # EN: [5. Exception Guidance: Handle empty or invalid input gracefully without stopping thinking]
+            # KO: [5. 예외 상황 안내: 생각 프로세스를 임의로 중단하지 않고 친절하게 입력 유도]
+            # ZH: 【5. 异常情况引导：对空输入/无效输入提供友好的讲解员式引导，不可随意停止】
             return self.format_output(
                 status="invalid_input",
                 response=(
-                    "您好！我是深圳大学图书馆的在线管理员。请问您想了解哪个校区图书馆的开放时间、图书借阅藏书、座位预约还是外来参观事宜呢？"
-                    " (Hello! I am your SZU Library assistant. How may I help you with library opening hours, book collections, seat reservations, or visitor guidelines across our campuses?)"
+                    "您好！我是深圳大学的校园文化讲解员。请问有什么关于深大的历史、古今建筑、历任校长或校园名人的问题想要了解吗？"
+                    " (Hello! I am your SZU campus guide. Please feel free to ask any questions about Shenzhen University's history, architecture, president, or notable figures.)"
                 ),
                 error_detail="User input is empty or not a valid string.",
             )
 
         input_text = user_input.strip()
         knowledge = (context or {}).get("knowledge", {})
-        library_data = knowledge.get("library_info") or {}
+        campus_data = knowledge.get("campus_info") or {}
 
-        # EN: Match library facts (collections, campus types/count, hours, booking, visiting) from knowledge base.
-        # KO: 지식 베이스에서 도서관 정보(장서, 캠퍼스별 종류/수, 개관 시간, 예약, 방문) 매칭.
-        # ZH: 从知识库检索深大图书馆藏书、校区分布、开放时间、预约与参观相关的匹配条目
+        # EN: Match campus facts (history, architecture, figures, culture) from knowledge base.
+        # KO: 지식 베이스에서 캠퍼스 정보(역사, 건축, 인물, 문화) 매칭.
+        # ZH: 从知识库检索深大历史、建筑、名人、文化相关的匹配条目
         matched_facts = []
-        if isinstance(library_data, dict):
-            for key, value in library_data.items():
+        if isinstance(campus_data, dict):
+            for key, value in campus_data.items():
                 if key in input_text or any(k in input_text for k in key.split()):
                     matched_facts.append(f"• {key}: {value}")
 
-        # EN: [5. Exception & Missing Info Handling: Tactful librarian response when information is unavailable]
-        # KO: [5. 예외 및 정보 부족 처리: 정보를 찾을 수 없을 때 사서의 어조로 우아하고 체계적인 유도]
-        # ZH: 【5. 异常与信息不可用处理：未查到知识时以图书管理员口吻委婉回复不可知，严禁捏造，用提问语言解答】
+        # EN: [5. Exception & Missing Info Handling: Tactful guidance when information is unavailable]
+        # KO: [5. 예외 및 정보 부족 처리: 정보를 찾을 수 없을 때 우아하고 체계적인 유도]
+        # ZH: 【5. 异常与信息不可用处理：未查到知识时以讲解员口吻委婉回复不可知，严禁捏造，用提问语言解答】
         if not matched_facts:
             return self.format_output(
                 status="unavailable",
                 response=(
-                    "十分抱歉，关于您询问的这项具体细节，我目前的馆务数据库中暂未记录，因此无法确切解答，请您谅解。"
-                    "不过您可以访问深大图书馆官方网站或微信公众号查询实时馆藏与动态。若您想了解粤海校区（包玉刚图书馆/汇典楼/汇智楼）或丽湖校区（启明楼）的日常开放时间与座位预约方式，我很乐意为您解答！\n"
-                    "(Regrettably, the specific detail you requested is currently unavailable in my library knowledge portal, so I am unable to offer a definitive answer. "
-                    "You may check the official SZU Library website for real-time updates, or feel free to inquire about opening hours or seat booking across our campuses.)"
+                    "十分抱歉，关于您提到的这一点，我目前的导览资料库中暂未收录相关的详细信息，因此无法为您确切解答，请您谅解。"
+                    "不过您可以关注深圳大学官方档案馆或官网发布的最新信息。若您对荔园的标志性建筑（如粤海校区/丽湖校区）或创校历史感兴趣，我很乐意为您继续讲解！\n"
+                    "(Regrettably, the requested detail is currently unavailable in my guided knowledge repository, so I cannot provide a definitive answer at this moment. "
+                    "Please feel free to check SZU's official updates, or ask about our iconic landmarks, campuses, or founding history—I would be delighted to assist you.)"
                 ),
-                error_detail="Library knowledge base lookup miss.",
+                error_detail="Campus knowledge base lookup miss.",
             )
 
         context_str = "\n".join(matched_facts)
-
+        
         # EN: [4. Clear Output Construction: Assembling step-by-step reasoning prompt and response rules]
         # KO: [4. 명확한 출력 구조화: 단계별 추론 프롬프트 및 응답 규칙 조립]
         # ZH: 【4. 格式化输出构造：结合 CoT 逐步思考提示词与语言自适应指令】
         final_prompt = (
             f"{self.get_system_prompt()}\n\n"
             f"[Reference Knowledge / 参考资料]:\n{context_str}\n\n"
-            f"[User Question / 读者提问]: {input_text}\n\n"
-            f"[Librarian Guidance Task / 图书管理员服务任务]:\n"
-            f"1. Match User Language (提问语言匹配)：首先识别读者提问所使用的语言，全篇回答必须严格使用该语言。\n"
-            f"2. Think step-by-step (逐步思考分析)：分析读者咨询的是藏书查询、校区馆舍分布、开放时间、预约流程还是参观规定，严格依据参考资料回答。若资料库未记录，需委婉说明不知道，严禁编造答案。\n"
-            f"3. Formulate Response (输出回复)：以富有耐性、言语得体的管理员口吻解答。"
+            f"[User Question / 访客提问]: {input_text}\n\n"
+            f"[Guidance Task / 讲解任务]:\n"
+            f"1. Match User Language (提问语言匹配)：首先识别访客提问所使用的语言，全篇回答必须严格使用该语言。\n"
+            f"2. Think step-by-step (逐步思考分析)：厘清提问涉及的是历史、建筑、校长还是名人，严格对照参考资料提取核心事实。若资料库未提及相关信息，必须明确并委婉表达不知道，严禁编造或捏造答案。\n"
+            f"3. Formulate Response (输出回复)：以风度有礼的讲解员口吻解答。"
         )
 
         return self.format_output(status="success", response=final_prompt)
