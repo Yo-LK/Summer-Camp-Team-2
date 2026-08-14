@@ -74,18 +74,31 @@ def get_last_llm_payload(skill_name: str) -> dict[str, Any]:
     return deepcopy(payload) if payload else {}
 
 
-def ask_model(message: str, *, skill_name: str = "default") -> str:
+def ask_model(
+    message: str,
+    *,
+    skill_name: str = "default",
+    system_prompt: str | None = None,
+    include_knowledge: bool = True,
+) -> str:
     _append_final_prompt_log(skill_name, message)
 
-    user_prompt = (
-        f"Knowledge context:\n{json.dumps(KNOWLEDGE, ensure_ascii=False, indent=2)}\n\n"
-        f"User question:\n{message}"
+    if include_knowledge:
+        user_prompt = (
+            f"Knowledge context:\n{json.dumps(KNOWLEDGE, ensure_ascii=False, indent=2)}\n\n"
+            f"User question:\n{message}"
+        )
+    else:
+        user_prompt = message
+
+    resolved_system_prompt = system_prompt or settings.system_prompt_path.read_text(
+        encoding="utf-8"
     )
 
     payload = {
         "model": settings.ollama_model,
         "messages": [
-            {"role": "system", "content": settings.system_prompt_path.read_text(encoding="utf-8")},
+            {"role": "system", "content": resolved_system_prompt},
             {"role": "user", "content": user_prompt},
         ],
         "stream": False,
