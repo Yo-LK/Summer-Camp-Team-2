@@ -66,6 +66,5 @@ class SkillRouter:
         Known limitation: The current Router uses deterministic keyword-based rules. It is simple, testable, and works without additional LLM calls, but it may fail to recognize paraphrased, ambiguous, or multilingual requests when no configured keyword matches. A future version could use an LLM-based intent classifier as a fallback.
         '''
 
-        # No matching Skill: default to the general campus skill so the
-        # knowledge base remains accessible even for broad or fuzzy requests.
-        return self.skills.get("campus")
+        # No configured keyword matched.
+        return None
