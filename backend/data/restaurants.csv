@@ -1,0 +1,7 @@
+restaurant_id,name,cuisine,average_price,rating,hours
+R001,Jade Pavilion,Chinese,48,4.2,11:00-21:30
+R002,Imperial Garden,Chinese,188,4.8,11:30-22:00
+R003,Seoul Kitchen,Korean,55,4.3,11:00-21:30
+R004,Hanok Table,Korean,148,4.7,17:00-22:00
+R005,Lion City Cafe,Singaporean,42,4.1,10:30-21:00
+R006,Orchid House,Singaporean,132,4.6,11:30-22:00
