@@ -35,19 +35,19 @@ class LibrarySkill(BaseSkill):
         )
 
     def get_system_prompt(self) -> str:
-        # EN: [2. System Prompt: Professional librarian persona, step-by-step reasoning, bilingual retention, and courteous tone]
-        # KO: [2. 시스템 프롬프트: 전문 사서 페르소나, 단계별 추론, 이중 언어 보존 및 품격 있는 어조]
-        # ZH: 【2. System Prompt：优雅有风度的深大图书管理员角色、逐步推理、英文保留与耐心得体的回答】
+        # EN: [2. System Prompt: Professional librarian persona, step-by-step reasoning, user language matching, and courteous tone]
+        # KO: [2. 시스템 프롬프트: 전문 사서 페르소나, 단계별 추론, 질문 언어 맞춤, 품격 있는 어조]
+        # ZH: 【2. System Prompt：优雅有风度的深大图书管理员角色、逐步推理、提问语言自适应与耐心得体的回答】
         return (
             "[Shenzhen University Professional Librarian Instructions]\n"
             "Role & Persona:\n"
             "You are a courteous, scholarly, and patient official librarian of Shenzhen University (SZU) Library. "
             "Your tone is warm, polite, and refined (符合有风度的图书管理员，语气富有耐性，言语得体).\n\n"
             "Core Guidelines:\n"
-            "1. Factuality & Honesty: Provide accurate information regarding SZU library collections, campus library distributions (e.g., Yuehai & Lihu campuses), opening schedules, seat/space reservations, and visitor policies based strictly on the [Reference Knowledge]. "
-            "If any specific record is unavailable, tactfully express that you do not know (e.g., '十分抱歉，关于这一细节，目前馆藏与馆务系统中暂未记载……').\n"
-            "2. Step-by-Step Reasoning (CoT): Think step-by-step before addressing the query to analyze user focus (e.g., collection search, booking workflow, campus-specific opening hours, or guest visitation protocols).\n"
-            "3. English Retention: Keep key library terms, branch names, and essential instructions bilingual (输出语句需要保留英文表达或英文对照).\n"
+            "1. Factuality & Honesty: Provide accurate information regarding SZU library collections, campus library distributions (e.g., Yuehai & Lihu campuses), opening schedules, seat/space reservations, and visitor policies strictly based on the [Reference Knowledge]. "
+            "Never fabricate or guess answers. If information is missing or unavailable, tactfully and truthfully express that you do not know in the user's language.\n"
+            "2. Language Consistency Rule (语言一致性规则): You MUST detect and respond in the EXACT SAME LANGUAGE as the user's question (e.g., respond in Chinese if asked in Chinese, respond in English if asked in English, etc.).\n"
+            "3. Step-by-Step Reasoning (CoT): Think step-by-step before addressing the query to analyze user focus (e.g., collection search, booking workflow, campus-specific opening hours, or guest visitation protocols).\n"
             "4. Exceptional Guidance: In case of missing input, error, or ambiguous requests, offer helpful guidance gracefully without abruptly halting the reasoning process."
         )
 
@@ -72,7 +72,7 @@ class LibrarySkill(BaseSkill):
 
         input_text = user_input.strip()
         knowledge = (context or {}).get("knowledge", {})
-        library_data = knowledge.get("library") or {}
+        library_data = knowledge.get("library_info") or {}
 
         # EN: Match library facts (collections, campus types/count, hours, booking, visiting) from knowledge base.
         # KO: 지식 베이스에서 도서관 정보(장서, 캠퍼스별 종류/수, 개관 시간, 예약, 방문) 매칭.
@@ -80,20 +80,20 @@ class LibrarySkill(BaseSkill):
         matched_facts = []
         if isinstance(library_data, dict):
             for key, value in library_data.items():
-                #if key in input_text or any(k in input_text for k in key.split()):
-                matched_facts.append(f"• {key}: {value}")
+                if key in input_text or any(k in input_text for k in key.split()):
+                    matched_facts.append(f"• {key}: {value}")
 
         # EN: [5. Exception & Missing Info Handling: Tactful librarian response when information is unavailable]
         # KO: [5. 예외 및 정보 부족 처리: 정보를 찾을 수 없을 때 사서의 어조로 우아하고 체계적인 유도]
-        # ZH: 【5. 异常与信息不可用处理：未查到知识时以图书管理员口吻委婉回复并提供进一步服务建议，保留英文】
+        # ZH: 【5. 异常与信息不可用处理：未查到知识时以图书管理员口吻委婉回复不可知，严禁捏造，用提问语言解答】
         if not matched_facts:
             return self.format_output(
                 status="unavailable",
                 response=(
-                    "十分抱歉，关于您询问的这项具体细节，我目前的馆务数据库中暂未记录。"
+                    "十分抱歉，关于您询问的这项具体细节，我目前的馆务数据库中暂未记录，因此无法确切解答，请您谅解。"
                     "不过您可以访问深大图书馆官方网站或微信公众号查询实时馆藏与动态。若您想了解粤海校区（包玉刚图书馆/汇典楼/汇智楼）或丽湖校区（启明楼）的日常开放时间与座位预约方式，我很乐意为您解答！\n"
-                    "(Regrettably, the specific detail you requested is currently unavailable in my library knowledge portal. "
-                    "You may check the official SZU Library website for real-time updates. Please feel free to inquire about opening hours or seat booking for Yuehai or Lihu Campus libraries, and I will be delighted to assist.)"
+                    "(Regrettably, the specific detail you requested is currently unavailable in my library knowledge portal, so I am unable to offer a definitive answer. "
+                    "You may check the official SZU Library website for real-time updates, or feel free to inquire about opening hours or seat booking across our campuses.)"
                 ),
                 error_detail="Library knowledge base lookup miss.",
             )
@@ -102,15 +102,15 @@ class LibrarySkill(BaseSkill):
 
         # EN: [4. Clear Output Construction: Assembling step-by-step reasoning prompt and response rules]
         # KO: [4. 명확한 출력 구조화: 단계별 추론 프롬프트 및 응답 규칙 조립]
-        # ZH: 【4. 格式化输出构造：结合 CoT 逐步思考提示词与保留英文指令】
+        # ZH: 【4. 格式化输出构造：结合 CoT 逐步思考提示词与语言自适应指令】
         final_prompt = (
             f"{self.get_system_prompt()}\n\n"
             f"[Reference Knowledge / 参考资料]:\n{context_str}\n\n"
             f"[User Question / 读者提问]: {input_text}\n\n"
             f"[Librarian Guidance Task / 图书管理员服务任务]:\n"
-            f"1. Think step-by-step (逐步思考分析)：分析读者咨询的是藏书查询、校区馆舍分布、开放时间、预约流程还是参观规定，提取参考资料中的核心要素。\n"
-            f"2. Formulate a patient, cultured librarian-style response (富有耐性、言语得体的管理员回复)。\n"
-            f"3. Ensure essential library terminology, branch names, and action steps retain English translation (保留英文对应表达)。"
+            f"1. Match User Language (提问语言匹配)：首先识别读者提问所使用的语言，全篇回答必须严格使用该语言。\n"
+            f"2. Think step-by-step (逐步思考分析)：分析读者咨询的是藏书查询、校区馆舍分布、开放时间、预约流程还是参观规定，严格依据参考资料回答。若资料库未记录，需委婉说明不知道，严禁编造答案。\n"
+            f"3. Formulate Response (输出回复)：以富有耐性、言语得体的管理员口吻解答。"
         )
 
         return self.format_output(status="success", response=final_prompt)
