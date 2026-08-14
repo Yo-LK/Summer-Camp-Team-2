@@ -101,12 +101,6 @@ class CampusSkill(BaseSkill):
                 ):
                     matched_facts.append(f"• {key}: {value}")
 
-        # If no exact/alias key match was found, provide full campus facts so
-        # broad campus-history questions can still be answered from knowledge.
-        if not matched_facts and isinstance(campus_data, dict):
-            for key, value in campus_data.items():
-                matched_facts.append(f"• {key}: {value}")
-
         # EN: [5. Exception & Missing Info Handling: Tactful guidance when information is unavailable]
         # KO: [5. 예외 및 정보 부족 처리: 정보를 찾을 수 없을 때 우아하고 체계적인 유도]
         # ZH: 【5. 异常与信息不可用处理：未查到知识时以讲解员口吻委婉回复不可知，严禁捏造，用提问语言解答】
