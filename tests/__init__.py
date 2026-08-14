@@ -1,0 +1,1 @@
+"""CampusBot automated tests."""
