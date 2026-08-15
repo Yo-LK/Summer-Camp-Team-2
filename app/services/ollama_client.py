@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from datetime import datetime
 from typing import Any
 
 import httpx
@@ -27,46 +26,45 @@ def load_knowledge() -> dict:
 
 KNOWLEDGE = load_knowledge()
 LAST_LLM_PAYLOADS: dict[str, dict[str, Any]] = {}
-PROMPT_LOG_PATH = settings.logs_root / "final_formulated_prompts.log"
-TRANSLATION_OUTPUT_LOG_PATH = settings.logs_root / "translation_skill_outputs.log"
 
 
 def _append_final_prompt_log(skill_name: str, final_prompt: str) -> None:
-    timestamp = datetime.now().isoformat(timespec="seconds")
-    log_entry = (
-        "\n"
-        f"[{timestamp}] skill={skill_name}\n"
-        "---FINAL_PROMPT_START---\n"
-        f"{final_prompt}\n"
-        "---FINAL_PROMPT_END---\n"
-    )
-    with PROMPT_LOG_PATH.open("a", encoding="utf-8") as handle:
-        handle.write(log_entry)
+    # Verbose prompt logging is intentionally disabled.
+    return None
 
 
 def append_non_llm_prompt_log(skill_name: str, user_prompt: str, reason: str) -> None:
-    timestamp = datetime.now().isoformat(timespec="seconds")
-    log_entry = (
-        "\n"
-        f"[{timestamp}] skill={skill_name} no_llm_call=true\n"
-        f"reason={reason}\n"
-        "---USER_PROMPT_START---\n"
-        f"{user_prompt}\n"
-        "---USER_PROMPT_END---\n"
-    )
-    with PROMPT_LOG_PATH.open("a", encoding="utf-8") as handle:
-        handle.write(log_entry)
+    # Verbose prompt logging is intentionally disabled.
+    return None
 
 
 def append_translation_skill_output_log(output: dict[str, Any]) -> None:
-    timestamp = datetime.now().isoformat(timespec="seconds")
-    log_entry = {
-        "timestamp": timestamp,
-        "output": output,
-    }
-    with TRANSLATION_OUTPUT_LOG_PATH.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(log_entry, ensure_ascii=False))
-        handle.write("\n")
+    # Verbose per-call translation logging is intentionally disabled.
+    return None
+
+
+def _append_ask_model_output_log(
+    *,
+    skill_name: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    output: str,
+) -> None:
+    # Verbose model IO logging is intentionally disabled.
+    return None
+
+
+def _append_ask_model_error_log(
+    *,
+    skill_name: str,
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    error: str,
+) -> None:
+    # Verbose model IO logging is intentionally disabled.
+    return None
 
 
 def get_last_llm_payload(skill_name: str) -> dict[str, Any]:
@@ -81,8 +79,6 @@ def ask_model(
     system_prompt: str | None = None,
     include_knowledge: bool = True,
 ) -> str:
-    _append_final_prompt_log(skill_name, message)
-
     if include_knowledge:
         user_prompt = (
             f"Knowledge context:\n{json.dumps(KNOWLEDGE, ensure_ascii=False, indent=2)}\n\n"

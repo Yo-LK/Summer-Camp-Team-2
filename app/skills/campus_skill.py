@@ -33,6 +33,8 @@ class CampusSkill(BaseSkill):
                 "culture",
                 "motto",
                 "campus",
+                "格言",
+                "箴言"
             ],
         )
 
@@ -44,11 +46,11 @@ class CampusSkill(BaseSkill):
             "[Shenzhen University Professional Campus Guide Instructions]\n"
             "Role & Persona:\n"
             "You are an elegant, patient, and highly articulate official tour guide of Shenzhen University (SZU). "
-            "Your speech is polished, welcoming, and refined (符合有风度的讲解员，语气富有耐性，言语得体).\n\n"
+            "Your speech is polished, welcoming, and refined.\n\n"
             "Core Guidelines:\n"
             "1. Factuality & Honesty: Answer questions about SZU culture, history, buildings, president, and notable figures strictly based on the [Reference Knowledge]. "
             "Never fabricate or guess answers (e.g., if asked about the president and data is absent, do not guess). If information is missing, tactful and truthful admission of not knowing in the user's language is mandatory.\n"
-            "2. Language Consistency Rule (语言一致性规则): You MUST detect and respond in the EXACT SAME LANGUAGE as the user's question (e.g., respond in Chinese if asked in Chinese, respond in English if asked in English, etc.).\n"
+            "2. Language Consistency Rule: You MUST detect and respond in the EXACT SAME LANGUAGE as the user's question (e.g., respond in Chinese if asked in Chinese, respond in English if asked in English, etc.).\n"
             "3. Step-by-Step Reasoning (CoT): Think step-by-step before answering to analyze the user's focus (e.g., historical timeline, architectural significance, leadership/figures, or figure background).\n"
             "4. Exceptional Guidance: In cases of error, missing knowledge, or ambiguous input, offer graceful guidance and hints without stopping the reasoning process abruptly."
         )
@@ -121,8 +123,8 @@ class CampusSkill(BaseSkill):
         # EN: [4. Clear Output Construction: Assembling step-by-step reasoning prompt and response rules]
         # KO: [4. 명확한 출력 구조화: 단계별 추론 프롬프트 및 응답 규칙 조립]
         # ZH: 【4. 格式化输出构造：结合 CoT 逐步思考提示词与语言自适应指令】
-        final_prompt = (
-            f"{self.get_system_prompt()}\n\n"
+        system_prompt = self.get_system_prompt()
+        user_prompt = (
             f"[Language Control / 语言控制]:\n"
             f"• Source Language / 源语言: {source_language}\n"
             f"• Target Language / 目标语言: {target_language}\n"
@@ -135,7 +137,7 @@ class CampusSkill(BaseSkill):
             f"3. Formulate Response (输出回复)：以风度有礼的讲解员口吻解答。"
         )
 
-        answer = ask_model(final_prompt, skill_name=self.name)
+        answer = ask_model(user_prompt, skill_name=self.name, system_prompt=system_prompt, include_knowledge=False)
         output = self.format_output(status="success", response=answer)
 
         if (context or {}).get("debug_prompt"):
@@ -144,7 +146,7 @@ class CampusSkill(BaseSkill):
                 "skill": self.name,
                 "source_language": source_language,
                 "target_language": target_language,
-                "skill_prompt": final_prompt,
+                "skill_prompt": user_prompt,
                 "llm_system_message": payload.get("messages", [{}])[0].get("content", ""),
                 "llm_user_message": payload.get("messages", [{}, {}])[1].get("content", ""),
                 "model": payload.get("model", ""),

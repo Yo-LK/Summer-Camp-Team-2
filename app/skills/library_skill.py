@@ -36,6 +36,7 @@ class LibrarySkill(BaseSkill):
                 "yuehai library",
                 "lihu library",
                 "curator",
+                "图书馆"
             ],
         )
 
