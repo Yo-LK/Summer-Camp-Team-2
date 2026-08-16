@@ -18,8 +18,12 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    status: str = "success"
+    skill: str | None = None
     response: str
+    error_detail: str | None = None
     routed_skill: str | None = None
+    workflow: list[dict[str, Any]] = Field(default_factory=list)
     debug: dict[str, Any] | None = None
 
 
@@ -53,7 +57,11 @@ def chat(request: Request, payload: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=503, detail=message)
 
     return ChatResponse(
+        status=result.get("status") or "success",
+        skill=result.get("skill"),
         response=result.get("response") or "No response was generated.",
+        error_detail=result.get("error_detail"),
         routed_skill=result.get("routed_skill"),
+        workflow=result.get("workflow") or [],
         debug=result.get("debug") if payload.debug_prompt else None,
     )
