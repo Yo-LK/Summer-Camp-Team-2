@@ -1,0 +1,6 @@
+{
+  "method": "global_z_score",
+  "calculated_from": "source_train_only",
+  "mean": 0.027695700526237488,
+  "standard_deviation": 0.4977322816848755
+}

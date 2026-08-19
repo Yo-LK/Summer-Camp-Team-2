@@ -1,0 +1,5 @@
+task,classifier,method,accuracy,macro_f1,best_val_f1
+target_0hp,CNN_1D,dann,0.44490644490644493,0.4226710038854251,0.7869145424065292
+target_1hp,CNN_1D,dann,0.9382615759545085,0.9277240502544543,1.0
+target_2hp,CNN_1D,dann,1.0,1.0,1.0
+target_3hp,CNN_1D,dann,0.8691741618969746,0.902980467598821,1.0

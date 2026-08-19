@@ -1,0 +1,3 @@
+﻿data/raw_windows.npy
+experiments/runs/checkpoints/*.pt
+data/raw/

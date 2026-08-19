@@ -1,0 +1,26 @@
+{
+  "fault_type": {
+    "normal": 0,
+    "inner_race": 1,
+    "ball": 2,
+    "outer_race": 3
+  },
+  "severity": {
+    "normal": 0,
+    "0.007": 1,
+    "0.014": 2,
+    "0.021": 3
+  },
+  "outer_race_position": {
+    "NA": 0,
+    "6_oclock": 1,
+    "3_oclock": 2,
+    "12_oclock": 3
+  },
+  "split": {
+    "source_train": 0,
+    "source_validation": 1,
+    "target_adaptation": 2,
+    "target_test": 3
+  }
+}

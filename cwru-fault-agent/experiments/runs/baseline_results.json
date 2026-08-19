@@ -1,0 +1,138 @@
+{
+  "signal_only__RandomForest__source_validation": {
+    "accuracy": 0.9971870604781997,
+    "macro_f1": 0.9972372990270895
+  },
+  "signal_only__RandomForest__target_test_ZEROSHOT": {
+    "accuracy": 0.8176614881439084,
+    "macro_f1": 0.8512069648986271,
+    "confusion_matrix": [
+      [
+        87,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        193,
+        69,
+        0
+      ],
+      [
+        0,
+        0,
+        260,
+        2
+      ],
+      [
+        0,
+        0,
+        152,
+        460
+      ]
+    ]
+  },
+  "signal_only__SVM_RBF__source_validation": {
+    "accuracy": 0.9381153305203939,
+    "macro_f1": 0.9519410140499747
+  },
+  "signal_only__SVM_RBF__target_test_ZEROSHOT": {
+    "accuracy": 0.8168438266557645,
+    "macro_f1": 0.6425054317777881,
+    "confusion_matrix": [
+      [
+        0,
+        0,
+        87,
+        0
+      ],
+      [
+        0,
+        257,
+        5,
+        0
+      ],
+      [
+        0,
+        0,
+        262,
+        0
+      ],
+      [
+        0,
+        0,
+        132,
+        480
+      ]
+    ]
+  },
+  "signal_plus_condition__RandomForest__source_validation": {
+    "accuracy": 0.9957805907172996,
+    "macro_f1": 0.9960918539168823
+  },
+  "signal_plus_condition__RandomForest__target_test_ZEROSHOT": {
+    "accuracy": 0.8176614881439084,
+    "macro_f1": 0.851571950963306,
+    "confusion_matrix": [
+      [
+        87,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        194,
+        68,
+        0
+      ],
+      [
+        0,
+        0,
+        260,
+        2
+      ],
+      [
+        0,
+        0,
+        153,
+        459
+      ]
+    ]
+  },
+  "signal_plus_condition__SVM_RBF__source_validation": {
+    "accuracy": 0.9451476793248945,
+    "macro_f1": 0.9570782239512127
+  },
+  "signal_plus_condition__SVM_RBF__target_test_ZEROSHOT": {
+    "accuracy": 0.6255110384300899,
+    "macro_f1": 0.5062063266043662,
+    "confusion_matrix": [
+      [
+        0,
+        0,
+        87,
+        0
+      ],
+      [
+        0,
+        175,
+        87,
+        0
+      ],
+      [
+        0,
+        0,
+        262,
+        0
+      ],
+      [
+        0,
+        6,
+        278,
+        328
+      ]
+    ]
+  }
+}
