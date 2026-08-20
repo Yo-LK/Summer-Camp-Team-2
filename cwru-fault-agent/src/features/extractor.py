@@ -53,7 +53,7 @@ def freq_domain_features(x: np.ndarray, fs: float) -> dict:
     dominant_freq = freqs[dominant_idx]
 
     # 스펙트럼 중심/퍼짐 (magnitude를 가중치로 사용)
-    power = mag_nodc
+    power = mag_nodc ** 2 # features.csv와 일치하도록 magnitude^2 사용
     total_power = power.sum()
     if total_power > 0:
         centroid = float(np.sum(freqs * power) / total_power)
@@ -68,7 +68,8 @@ def freq_domain_features(x: np.ndarray, fs: float) -> dict:
     }
 
 
-def envelope_spectrum_value(x: np.ndarray, fs: float, target_freq: float, n_bins: int = 1) -> float:
+def envelope_spectrum_value(x: np.ndarray, fs: float, target_freq: float, n_bins: int = 0) -> float:
+    # n_bins=0이면 target_freq에 가장 가까운 FFT 빈(bin) 하나만 사용. n_bins>0이면 ±n_bins 범위에서 최대 진폭 사용.
     """
     포락선(envelope) 스펙트럼에서 target_freq에 가장 가까운 빈(bin) 주변
     (±n_bins 빈) 최대 진폭을 반환. Hilbert 변환으로 envelope을 구한 뒤 FFT.
