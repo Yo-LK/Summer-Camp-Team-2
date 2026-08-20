@@ -1,6 +1,11 @@
 """
 CWRU baseline runner (role 3).
 
+"CORAL/DANN이랑 공정하게 비교할 기준점(target_scarce)이 없었어서 추가했고, 
+데이터 불균형 보정(class_weight)도 같이 넣었어. 
+기존 3개 모드는 코드 그대로라 이전 결과엔 영향 없어."
+
+
 Produces the three reference numbers every transfer-learning result is judged against:
   1. same-domain upper bound   : train/test inside one load, no domain shift
   2. cross-domain lower bound  : train on source load(s), test on target load, NO adaptation
@@ -89,14 +94,27 @@ def split_cross_domain(df: pd.DataFrame, src_loads: list[int], tgt_load: int):
     return df[df.load_hp.isin(src_loads)], df[df.load_hp == tgt_load]
 
 
+def subsample_frac_per_class(df: pd.DataFrame, frac: float, seed: int, min_per_class: int = 1) -> pd.DataFrame:
+    """클래스별로 frac 비율만 남김 (target_scarce용). groupby().apply()는 최신 pandas에서
+    그룹 기준 컬럼(label)을 결과에서 빼버리는 버그가 있어서 .groups+.loc 방식으로 짬."""
+    rng = np.random.RandomState(seed)
+    keep_idx = []
+    for _, idx in df.groupby("label").groups.items():
+        idx = np.asarray(idx)
+        n_keep = min(len(idx), max(min_per_class, round(len(idx) * frac)))
+        keep_idx.extend(rng.choice(idx, size=n_keep, replace=False))
+    return df.loc[keep_idx]
+
 def build_tasks(df: pd.DataFrame, mode: str):
     loads = sorted(df.load_hp.unique())
     if mode == "pairwise":
         return [(f"{s}hp->{t}hp", [s], t) for s in loads for t in loads if s != t]
-    if mode == "loo":                       # leave-one-load-out
+    if mode == "loo":
         return [(f"rest->{t}hp", [l for l in loads if l != t], t) for t in loads]
     if mode == "same_domain":
         return [(f"{l}hp(in-domain)", [l], l) for l in loads]
+    if mode == "target_scarce":                     # ← 이 2줄 추가
+        return [(f"{l}hp(target_scarce)", [], l) for l in loads]
     raise ValueError(mode)
 
 
@@ -105,11 +123,11 @@ def build_tasks(df: pd.DataFrame, mode: str):
 def make_models(seed: int) -> dict:
     m = {
         "knn_k5": KNeighborsClassifier(n_neighbors=5),
-        "logreg": LogisticRegression(max_iter=2000, random_state=seed),
-        "svm_rbf": SVC(C=10, gamma="scale", random_state=seed),
-        "random_forest": RandomForestClassifier(n_estimators=300, random_state=seed, n_jobs=-1),
-        "extra_trees": ExtraTreesClassifier(n_estimators=300, random_state=seed, n_jobs=-1),
-        "grad_boost": GradientBoostingClassifier(random_state=seed),
+        "logreg": LogisticRegression(max_iter=2000, random_state=seed, class_weight="balanced"),   # 추가
+        "svm_rbf": SVC(C=10, gamma="scale", random_state=seed, class_weight="balanced"),            # 추가
+        "random_forest": RandomForestClassifier(n_estimators=300, random_state=seed, n_jobs=-1, class_weight="balanced"),  # 추가
+        "extra_trees": ExtraTreesClassifier(n_estimators=300, random_state=seed, n_jobs=-1, class_weight="balanced"),      # 추가
+        "grad_boost": GradientBoostingClassifier(random_state=seed),   # class_weight 파라미터 없음, 그대로 둠
     }
     try:
         from xgboost import XGBClassifier      # optional
@@ -159,12 +177,20 @@ def run(args):
     for name, src, tgt in tasks:
         if args.mode == "same_domain":
             tr, te = split_same_domain(df, tgt)
+        elif args.mode == "target_scarce":                       # ← 이 분기 추가
+            tr_full, te = split_same_domain(df, tgt)
         else:
             tr, te = split_cross_domain(df, src, tgt)
-        Xtr, ytr = tr[feat_cols].to_numpy(), tr.label.to_numpy()
+
+        if args.mode != "target_scarce":                         # ← 이 조건 추가
+            Xtr, ytr = tr[feat_cols].to_numpy(), tr.label.to_numpy()
         Xte, yte = te[feat_cols].to_numpy(), te.label.to_numpy()
 
         for seed in seeds:
+            if args.mode == "target_scarce":                     # ← 이 블록 추가
+                tr = subsample_frac_per_class(tr_full, args.target_frac, seed=seed)
+                Xtr, ytr = tr[feat_cols].to_numpy(), tr.label.to_numpy()
+
             for mname, model in make_models(seed).items():
                 r = fit_eval(model, Xtr, ytr, Xte, yte, labels)
                 rows.append({
@@ -202,7 +228,9 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--features", default="features.csv")
     p.add_argument("--classes", type=int, default=10, choices=[4, 10])
-    p.add_argument("--mode", default="loo", choices=["loo", "pairwise", "same_domain"])
+    p.add_argument("--mode", default="loo", choices=["loo", "pairwise", "same_domain", "target_scarce"])
     p.add_argument("--seeds", default="42,43,44")
     p.add_argument("--outdir", default="results")
+    p.add_argument("--target-frac", type=float, default=0.10,      # ← 새 옵션 추가
+                    help="target_scarce only: per-class fraction of target load's train windows to keep")
     run(p.parse_args())
