@@ -11,7 +11,7 @@ Build an agent that can:
 3. Select appropriate fault diagnosis methods
 4. Apply transfer learning across different operating conditions (motor loads)
 
-**Current state:** the full data pipeline (download → split/window/feature-extraction → baselines → adaptation methods) is done and has produced a single consolidated results table (`data/agent_policy_table.csv`, 12 pairs × 7 methods) that's ready to feed an agent's decision policy. That agent/orchestration layer — the actual "build an agent" part of the project goal — is the next unbuilt piece; everything so far is a manually-run notebook pipeline that produces the inputs an agent would need.
+**Current state:** the full data pipeline (download → split/window/feature-extraction → baselines → adaptation methods) is done and has produced a single consolidated results table (`data/agent_policy_table.csv`, 12 pairs × 10 methods) that's ready to feed an agent's decision policy. That agent/orchestration layer — the actual "build an agent" part of the project goal — is the next unbuilt piece; everything so far is a manually-run notebook pipeline that produces the inputs an agent would need.
 
 ## Status against the 4 objectives
 
@@ -19,7 +19,7 @@ Build an agent that can:
 |---|---|---|---|
 | 1 | Load & understand dataset structure | ✅ Done | `data_download.ipynb` downloads, labels, and inspects the data |
 | 2 | Analyze vibration signals | 🟡 Partial | Extraction pipeline exists (raw/FFT/envelope/fault-frequency peaks), but no analysis on top of it yet — nothing validates that these features actually separate healthy from faulty windows |
-| 3 | Select fault diagnosis methods | 🟢 Mostly done | 7 methods compared head-to-head with real per-pair numbers, consolidated into `data/agent_policy_table.csv` — the remaining gap is that "selection" is still a human reading a table, not a policy/agent |
+| 3 | Select fault diagnosis methods | 🟢 Mostly done | 10 methods compared head-to-head with real per-pair numbers, consolidated into `data/agent_policy_table.csv` — the remaining gap is that "selection" is still a human reading a table, not a policy/agent |
 | 4 | Transfer learning across operating conditions | 🟢 Mostly done | Two real adaptation methods (fine-tuned CNN, CORAL+Random Forest) implemented and evaluated across all 12 pairs; the best variants (partial-freeze CNN, CORAL+RF on FFT features) close nearly all the gap to the target-only ceiling — see results below |
 
 ## What's been built
@@ -44,7 +44,7 @@ Build an agent that can:
   1. **Raw time domain** — the window itself; captures amplitude patterns.
   2. **FFT magnitude spectrum** — captures frequency content, though fault impacts are usually buried under broadband resonance here.
   3. **Envelope spectrum** — `|Hilbert(window)|`, then FFT of that envelope. Demodulates the signal so the fault impact *rate* shows up as clean spectral lines, isolated from the carrier resonance.
-  4. **Fault-frequency peaks (BPFO/BPFI/BSF)** — envelope-spectrum magnitude read off at the theoretical outer-race/inner-race/ball-spin fault frequencies (CWRU's published order-multipliers for the SKF 6205 drive-end bearing: 3.5848×/5.4152×/2.357× shaft speed) and their 2nd/3rd harmonics, ±5 Hz tolerance — compresses the dense envelope spectrum into 9 physically-grounded numbers per window.
+  4. **Fault-frequency peaks (BPFO/BPFI/BSF)** — envelope-spectrum magnitude read off at the theoretical outer-race/inner-race/ball-spin fault frequencies (CWRU's published order-multipliers for the SKF 6205 drive-end bearing: 3.5848×/5.4152×/2.357× shaft speed) and their 2nd/3rd harmonics, tolerance wide enough to always catch a bin (~12.7 Hz — the FFT bin spacing is 11.72 Hz; an earlier ±5 Hz tolerance was narrower than half that spacing and silently returned `0.0` for some harmonics regardless of signal content), then **normalized by that window's own time-domain RMS** so the result reflects relative spectral concentration rather than each window's overall vibration amplitude — compresses the dense envelope spectrum into 9 physically-grounded, domain-comparable numbers per window.
   - Saved as **`.npz`**, not pickle — these are numeric feature matrices meant to feed a model, not the metadata-heavy structures used earlier. Per-window metadata (`load_hp`, `split`, `category`, `fault_location`, `filename`, resolved RPM, etc.) is kept alongside as parallel arrays in the same file: `data/features_time.npz`, `data/features_fft.npz`, `data/features_envelope.npz`, `data/features_fault_freq.npz`. All four share the same row order, so row `i` is the same window across every file.
   - Features are computed per load/split (mirroring `windows_by_load`), **not yet materialized per source/target pair** — assembling `source_train`/`source_test`/`target_labeled`/`target_test` for a given (source_load, target_load) still requires filtering these arrays by `load_hp`/`split`, the same way `make_splits` does for raw windows. That filtering, plus training/adapting/evaluating a model on the result, is left for the (not yet written) training notebook.
 
@@ -59,59 +59,68 @@ Two no-adaptation reference points, evaluated across all **12 ordered (source_lo
 - Only **8 models are trained** (4 per baseline, one per load) — `source_train` and `target_labeled` are the same underlying data for a given load, so baseline 1's model is reused across all 3 pairs where that load is the source, and results are built by evaluating already-trained models rather than retraining per pair.
 - Checkpoints saved to **`models/`** (`baseline1_full_load{0-3}.pt`, `baseline2_scarce_load{0-3}.pt`) and results to **`data/baseline_results.csv`** (one row per pair, both baselines' accuracy/macro-F1).
 
-### `domain_adaptation.ipynb` — adapted CNN, CORAL + Random Forest, full comparison
+### `domain_adaptation_evaluation.ipynb` — adapted CNN, CORAL + Random Forest, RF baseline, full comparison
 
 Builds real domain-adaptation methods on top of the two baselines and compares everything on the same `target_test`, for all 12 pairs:
 
 - **Adapted CNN, fine-tuned from Baseline 1** — loads Baseline 1's source-trained weights, then fine-tunes on the same scarce 10%/class target subset Baseline 2 uses, at a 10x lower learning rate, in two variants: **full freeze** (only `label_predictor` retrains) and **partial freeze** (the last conv block also unfreezes, weights *and* BatchNorm running stats).
-- **Adapted classical ML — CORAL + Random Forest** — CORAL-aligns `source_train`'s covariance to `target_labeled`'s, trains a Random Forest on the aligned result, run on three feature sets: the 9-dim `features_fault_freq` (BPFO/BPFI/BSF peaks), and `features_fft`/`features_envelope` (2049-dim each, PCA-reduced to 20 components first — otherwise CORAL's covariance math is severely rank-deficient against as few as 56 target samples).
-- A sanity check re-derives Baseline 2's numbers from the same scarce-subset logic and confirms they match `baseline_results.csv` (within GPU training non-determinism), validating that the index-based window selection lines up correctly between `windows_by_load.pkl` (raw windows) and the `features_*.npz` files (pre-extracted features).
-- **68 models saved to `models/`**: 24 adapted-CNN checkpoints (2 freeze modes × 12 pairs) + 36 CORAL+RF bundles (3 feature sets × 12 pairs, joblib dumps of `{clf, scaler, pca}`), alongside the 8 baseline checkpoints above.
-- **Consolidated policy table** — all 7 methods' accuracy reshaped into one wide table, one row per pair, one column per method, saved to **`data/agent_policy_table.csv`**. This is the intended hand-off artifact for the next phase (an agent that picks which method to trust for a given source→target pair) — see results below.
+- **Adapted classical ML — CORAL + Random Forest** — CORAL-aligns `source_train`'s covariance to the target's, trains a Random Forest on the aligned result, run on three feature sets: the 9-dim `features_fault_freq` (BPFO/BPFI/BSF peaks), and `features_fft`/`features_envelope` (2049-dim each, PCA-reduced to 20 components first — otherwise CORAL's covariance math is severely rank-deficient). **CORAL is unsupervised with respect to target** — it only needs the target *feature* distribution, never labels — so unlike the labeled methods above, its target-side statistics are computed from the **full target train split** (536–1322 windows/load), not the scarce 10%/class subset; that restriction only exists for methods that genuinely need target labels.
+- **Classical ML baseline (no adaptation)** — a plain Random Forest trained on `source_train` only, evaluated zero-shot cross-domain, for each of the 3 feature sets — the classical-ML analog of Baseline 1. Necessary because without it, there was no way to tell how much CORAL was actually contributing versus what the feature set + RF already gets on its own — see takeaways below.
+- A sanity check re-derives Baseline 2's numbers from the scarce-subset logic and confirms they match `baseline_results.csv` (within GPU training non-determinism), validating that the index-based window selection lines up correctly between `windows_by_load.pkl` (raw windows) and the `features_*.npz` files (pre-extracted features).
+- **80 models saved to `models/`**: 24 adapted-CNN checkpoints (2 freeze modes × 12 pairs) + 36 CORAL+RF bundles + 12 plain-RF-no-adapt bundles (3 feature sets × 12 pairs / 4 loads, joblib dumps of `{clf, scaler, pca}`), alongside the 8 baseline checkpoints above.
+- **Consolidated policy table** — all 10 methods' accuracy reshaped into one wide table, one row per pair, one column per method, saved to **`data/agent_policy_table.csv`**. This is the intended hand-off artifact for the next phase (an agent that picks which method to trust for a given source→target pair) — see results below.
 
 **`data/agent_policy_table.csv` — one row per pair, one column per method (accuracy):**
 
-| source→target | Baseline1 (no adapt) | Baseline2 (target-only) | CNN partial-freeze | CNN full-freeze | CORAL+RF (fft) | CORAL+RF (envelope) | CORAL+RF (fault_freq) |
-|---|---|---|---|---|---|---|---|
-| 0→1 | 0.615 | 0.814 | 0.829 | 0.699 | 0.655 | 0.590 | 0.606 |
-| 0→2 | 0.668 | 0.839 | 0.901 | 0.758 | 0.755 | 0.689 | 0.528 |
-| 0→3 | 0.494 | 0.752 | 0.736 | 0.680 | 0.748 | 0.640 | 0.301 |
-| 1→0 | 0.617 | 0.906 | 0.641 | 0.602 | 0.742 | 0.570 | 0.531 |
-| 1→2 | 0.919 | 0.839 | 0.910 | 0.922 | 0.910 | 0.857 | 0.627 |
-| 1→3 | 0.904 | 0.752 | 0.941 | 0.904 | 0.792 | 0.870 | 0.488 |
-| 2→0 | 0.398 | 0.906 | 0.336 | 0.508 | 0.750 | 0.523 | 0.469 |
-| 2→1 | 0.839 | 0.814 | 0.904 | 0.857 | 0.922 | 0.826 | 0.522 |
-| 2→3 | 0.696 | 0.752 | 0.981 | 0.860 | 0.953 | 0.941 | 0.547 |
-| 3→0 | 0.570 | 0.906 | 0.648 | 0.602 | 0.711 | 0.578 | 0.469 |
-| 3→1 | 0.780 | 0.814 | 0.891 | 0.786 | 0.835 | 0.845 | 0.422 |
-| 3→2 | 0.860 | 0.839 | 1.000 | 0.904 | 1.000 | 0.984 | 0.382 |
+| source→target | Baseline1 (no adapt) | Baseline2 (target-only) | CNN partial-freeze | CNN full-freeze | RF no-adapt (fft) | RF no-adapt (envelope) | RF no-adapt (fault_freq) | CORAL+RF (fft) | CORAL+RF (envelope) | CORAL+RF (fault_freq) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 0→1 | 0.615 | 0.814 | 0.829 | 0.699 | 0.758 | 0.665 | 0.562 | 0.655 | 0.590 | 0.568 |
+| 0→2 | 0.668 | 0.839 | 0.901 | 0.758 | 0.795 | 0.658 | 0.655 | 0.770 | 0.671 | 0.537 |
+| 0→3 | 0.494 | 0.752 | 0.736 | 0.680 | 0.730 | 0.615 | 0.599 | 0.680 | 0.562 | 0.547 |
+| 1→0 | 0.617 | 0.906 | 0.641 | 0.602 | 0.781 | 0.617 | 0.586 | 0.750 | 0.523 | 0.602 |
+| 1→2 | 0.919 | 0.839 | 0.910 | 0.922 | 0.811 | 0.860 | 0.596 | 0.898 | 0.835 | 0.739 |
+| 1→3 | 0.904 | 0.752 | 0.941 | 0.904 | 0.826 | 0.826 | 0.624 | 0.661 | 0.839 | 0.665 |
+| 2→0 | 0.398 | 0.906 | 0.336 | 0.508 | 0.734 | 0.680 | 0.570 | 0.711 | 0.500 | 0.531 |
+| 2→1 | 0.839 | 0.814 | 0.904 | 0.857 | 0.854 | 0.829 | 0.655 | 0.907 | 0.811 | 0.724 |
+| 2→3 | 0.696 | 0.752 | 0.981 | 0.860 | 0.888 | 0.907 | 0.727 | 0.876 | 0.876 | 0.767 |
+| 3→0 | 0.570 | 0.906 | 0.648 | 0.602 | 0.703 | 0.461 | 0.617 | 0.695 | 0.586 | 0.555 |
+| 3→1 | 0.780 | 0.814 | 0.891 | 0.786 | 0.717 | 0.602 | 0.581 | 0.826 | 0.814 | 0.637 |
+| 3→2 | 0.860 | 0.839 | 1.000 | 0.904 | 0.823 | 0.792 | 0.801 | 1.000 | 0.991 | 0.786 |
 
-No single method wins every pair (e.g. CNN partial-freeze wins 2→3 and 3→2; Baseline2 wins 1→0, 2→0, 3→0 by a wide margin; CORAL+RF fault-freq never wins anywhere) — that per-pair variability is the actual signal an agent policy needs to condition on.
+No single method wins every pair — e.g. `RF no-adapt (fft)` is the single best zero-shot method at 1→0 (0.781, beating every CNN and CORAL variant outright) — that per-pair variability is the actual signal an agent policy needs to condition on.
 
 **Results — mean accuracy across all 12 pairs:**
 
 | Method | Mean accuracy |
 |---|---|
 | Baseline 2 — target-only, 10%/class | 82.7% |
-| CORAL + Random Forest (FFT features) | 81.5% |
 | Adapted CNN (partial freeze) | 81.0% |
+| CORAL + Random Forest (FFT features) | 78.6% |
+| RF, no adaptation (FFT features) | 78.5% |
 | Adapted CNN (full freeze) | 75.7% |
-| CORAL + Random Forest (envelope features) | 74.3% |
+| CORAL + Random Forest (envelope features) | 71.6% |
+| RF, no adaptation (envelope features) | 70.9% |
 | Baseline 1 — source-only | 69.7% |
-| CORAL + Random Forest (fault-freq features) | 49.1% |
+| CORAL + Random Forest (fault-freq features) | 63.8% |
+| RF, no adaptation (fault-freq features) | 63.1% |
 
 ![Mean accuracy by method](assets/mean_accuracy.png)
 
-**Full per-pair results** (all 12 pairs individually, not just the mean above) are in **`data/full_comparison_results.csv`** and the two charts below:
+**Full per-pair results** (all 12 pairs individually, not just the mean above) are in **`data/full_comparison_results.csv`** and the charts below:
 
 ![CNN methods, all 12 load pairs](assets/cnn_methods_per_pair.png)
 
 ![CORAL + Random Forest methods, all 12 load pairs](assets/coral_methods_per_pair.png)
 
+![Does CORAL help vs. plain RF, per feature set](assets/rf_coral_vs_noadapt.png)
+
 **Takeaways:**
 
-- Partial-unfreezing the CNN's last conv block (75.7% → 81.0%) and switching CORAL from the compact fault-frequency features to the full FFT spectrum (49.1% → 81.5%) were both large, genuine improvements over the first attempt at each method — the fault-frequency feature set was the bottleneck for CORAL, not CORAL itself.
-- Neither adaptation method clearly *beats* Baseline 2 on average — the best variants land essentially tied with it. Leveraging source knowledge doesn't yet buy more than just training directly on the same amount of scarce target data does, for this task.
+- Two implementation bugs were found and fixed in `features_fault_freq.npz`: a peak-reading tolerance narrower than the FFT bin spacing (silently zeroing some harmonics regardless of signal content) and no per-window amplitude normalization (raw magnitudes were dominated by each load's overall vibration amplitude, causing a ~300x source/target covariance-scale mismatch that made CORAL collapse most of the signal during alignment). Fixing both raised CORAL+RF(fault-freq) from 49.1% to the low 60s.
+- Adding the RF-no-adaptation baseline was necessary, not optional: it reveals that **CORAL's actual contribution is small and inconsistent**. Averaged, CORAL beats plain RF by only ~1–3 points per feature set, and per-pair it doesn't even win a majority of the time (fft: 4/12, envelope: 5/12, fault-freq: 7/12) — without this baseline, CORAL+RF's numbers alone would have looked far more like "adaptation is working" than the evidence actually supports.
+- Letting CORAL use the *full* target train split (not the scarce labeled subset it doesn't actually need) was the theoretically correct fix, but didn't reliably help in practice: FFT and envelope actually got slightly *worse* on average (more data, but now covering an imbalanced class mixture rather than the class-balanced scarce subsample), while fault-freq improved slightly. Correct in principle; not a guaranteed win in this data regime.
+- Partial-unfreezing the CNN's last conv block (75.7% → 81.0%) remains a clear, genuine win.
+- No adaptation method — CNN or classical — clearly *beats* Baseline 2 on average; the best land close to it, not above it. Leveraging source knowledge hasn't yet been shown to buy more than training directly on the same amount of scarce target data, for this task.
 - The domain gap is pair-dependent, not uniform: e.g. at 2→0, Baseline 1 (39.8%) actually beats the partial-freeze adapted CNN (33.6%) — adaptation isn't guaranteed to help, and can occasionally hurt relative to doing nothing.
 
 ## Data layout
@@ -125,24 +134,26 @@ data/
 ├── features_time.npz           # raw windows, (5601, 4096), + per-window metadata
 ├── features_fft.npz            # FFT magnitude spectrum, (5601, 2049), + per-window metadata
 ├── features_envelope.npz       # Hilbert envelope spectrum, (5601, 2049), + per-window metadata
-├── features_fault_freq.npz     # BPFO/BPFI/BSF peak magnitudes, (5601, 9), + per-window metadata
+├── features_fault_freq.npz     # BPFO/BPFI/BSF peak magnitudes (RMS-normalized), (5601, 9), + per-window metadata
 ├── baseline_results.csv        # baseline 1 & 2 accuracy/macro-F1, one row per load pair (12 total)
-├── full_comparison_results.csv # all 7 methods' accuracy/macro-F1, one row per load pair (12 total)
-└── agent_policy_table.csv      # wide table: 1 row/pair × 7 method columns, accuracy only — the agent hand-off artifact
+├── full_comparison_results.csv # all 10 methods' accuracy/macro-F1, one row per load pair (12 total)
+└── agent_policy_table.csv      # wide table: 1 row/pair × 10 method columns, accuracy only — the agent hand-off artifact
 
-models/                          # not gitignored — 68 files total
+models/                          # not gitignored — 80 files total
 ├── baseline1_full_load{0-3}.pt          # baseline 1 checkpoints (4)
 ├── baseline2_scarce_load{0-3}.pt        # baseline 2 checkpoints (4)
 ├── adapted_cnn_{full,partial}_{S}to{T}.pt   # adapted CNN checkpoints (2 modes × 12 pairs = 24)
+├── rf_noadapt_{fault_freq,fft,envelope}_load{0-3}.joblib  # plain-RF-no-adapt bundles (3 feature sets × 4 loads = 12)
 └── coral_rf_{fault_freq,fft,envelope}_{S}to{T}.joblib  # CORAL+RF bundles (3 feature sets × 12 pairs = 36)
 
 assets/                          # not gitignored — README chart images
 ├── mean_accuracy.png
 ├── cnn_methods_per_pair.png
-└── coral_methods_per_pair.png
+├── coral_methods_per_pair.png
+└── rf_coral_vs_noadapt.png
 ```
 
-`data/` is gitignored (large binary files) — everything in it is reproducible by running `data_download.ipynb`, then `data_splitting_preprocessing.ipynb`, then `model_training.ipynb`, then `domain_adaptation.ipynb`. `models/` and `assets/` are not gitignored, since `assets/` holds this README's images and `models/` isn't large-binary-data in the same sense as `data/`.
+`data/` is gitignored (large binary files) — everything in it is reproducible by running `data_download.ipynb`, then `data_splitting_preprocessing.ipynb`, then `model_training.ipynb`, then `domain_adaptation_evaluation.ipynb`. `models/` and `assets/` are not gitignored, since `assets/` holds this README's images and `models/` isn't large-binary-data in the same sense as `data/`.
 
 ## Setup
 
@@ -164,7 +175,7 @@ pip install -r requirements.txt
 
 `torch` in `requirements.txt` pulls whatever CUDA build `pip` resolves for your platform automatically; CPU-only machines get the CPU build, no changes needed either way.
 
-Run in order: `data_download.ipynb` (populates `data/`), `data_splitting_preprocessing.ipynb`, `model_training.ipynb` (populates `models/` with the 8 baseline checkpoints), `domain_adaptation.ipynb` (adds 60 more checkpoints/bundles to `models/`, regenerates `assets/*.png`, and produces `data/agent_policy_table.csv`).
+Run in order: `data_download.ipynb` (populates `data/`), `data_splitting_preprocessing.ipynb`, `model_training.ipynb` (populates `models/` with the 8 baseline checkpoints), `domain_adaptation_evaluation.ipynb` (adds 72 more checkpoints/bundles to `models/`, regenerates `assets/*.png`, and produces `data/agent_policy_table.csv`).
 
 ## What's missing / next steps
 
@@ -173,3 +184,35 @@ Run in order: `data_download.ipynb` (populates `data/`), `data_splitting_preproc
 - **Objective 3 (method selection)** has the comparison data an agent needs (`agent_policy_table.csv`), but the "selection" logic itself doesn't exist yet — that's the agent work above. Also untested: `features_time` (the 4th extracted feature set) was never used for anything, and no method has been tried on `FE_time` (fan-end) or combined DE+FE signals.
 - **Objective 4 (transfer learning)** has two real adaptation methods now (fine-tuned CNN, CORAL+Random Forest) and both are competitive, but neither *beats* Baseline 2 on average — the actual value-add of "leveraging source knowledge" over "just use the scarce target labels directly" hasn't been demonstrated yet for this task. Untried: MMD/DANN-style adversarial domain adaptation, differential learning rates for the adapted CNN's unfrozen conv block vs. its head, and CORAL on combined feature sets (e.g. FFT + fault-freq concatenated) rather than one at a time.
 - **Objective 1** is done — scoped to the drive-end fault data and normal baseline data.
+
+## Planned structure for the agent
+
+Everything above lives in notebooks. The next phase pulls the reusable logic out of those notebooks into an importable `src/` package, then builds the actual agent on top of it:
+
+```
+src/                                # reusable, importable code — used by the agent
+├── __init__.py
+├── data_loading.py                 # load_mat_file(), build_raw_df()
+├── preprocessing.py                # split_signal_train_test(), segment_signal()
+├── feature_extraction.py           # extract_time(), extract_fft(),
+│                                      extract_envelope(), extract_fault_freq()
+├── models.py                       # CNN1D class definition
+├── adaptation.py                   # fine_tune(), coral_transform()
+└── evaluate.py                     # accuracy/F1/confusion matrix helpers
+
+agent/                               # the agentic workflow — the actual deliverable
+├── __init__.py
+├── tools.py                         # wraps src/ functions as agent-callable tools
+├── policy.py                        # loads comparison_table.csv, builds/queries
+│                                       the source→target → best-method lookup
+├── react_loop.py                    # THOUGHT/ACTION/OBSERVATION/DECISION orchestration
+└── diagnose.py                      # main entry point: diagnose(signal, condition)
+
+demo.py                              # or demo.ipynb — CLI/notebook demo entry point
+                                      # e.g. `python demo.py --file IR007_3hp.mat`
+```
+
+- `src/` holds the logic currently embedded in the four notebooks (`data_download.ipynb`, `data_splitting_preprocessing.ipynb`, `model_training.ipynb`, `domain_adaptation_evaluation.ipynb`), pulled out into importable modules so `agent/` can call them directly instead of duplicating notebook code.
+- `agent/policy.py`'s `comparison_table.csv` is this repo's existing `data/agent_policy_table.csv` — the lookup table already built and verified in `domain_adaptation_evaluation.ipynb`.
+- `agent/react_loop.py` is the THOUGHT/ACTION/OBSERVATION/DECISION orchestration loop — the part that actually makes this an agent rather than a static lookup.
+- `agent/diagnose.py` is the entry point a caller uses: `diagnose(signal, condition)`.
