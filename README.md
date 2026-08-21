@@ -177,6 +177,20 @@ pip install -r requirements.txt
 
 Run in order: `data_download.ipynb` (populates `data/`), `data_splitting_preprocessing.ipynb`, `model_training.ipynb` (populates `models/` with the 8 baseline checkpoints), `domain_adaptation_evaluation.ipynb` (adds 72 more checkpoints/bundles to `models/`, regenerates `assets/*.png`, and produces `data/agent_policy_table.csv`).
 
+## Running the demo
+
+Once `data/` and `models/` are populated (or a prebuilt `models/` directory is already present), launch the Streamlit UI:
+
+```bash
+streamlit run demo.py
+```
+
+This opens a browser tab (default `http://localhost:8501`) where you can upload a raw `.mat` vibration signal and the agent will:
+
+- infer the operating condition (load) from the signal's recorded RPM, falling back to a manual picker if the RPM is missing or doesn't match one of the four known loads closely enough
+- run the THOUGHT → ACTION → OBSERVATION → DECISION diagnosis loop (`agent/diagnose.py`, `agent/react_loop.py`), picking the best validated tool chain from `data/agent_policy_table.csv` and falling back to alternatives if confidence is low
+- report the predicted fault class, confidence, method used, and — for files from this project's own dataset — the actual class inferred from the filename, for comparison
+
 ## What's missing / next steps
 
 - **The agent itself** — this is the biggest gap relative to the project goal. `data/agent_policy_table.csv` exists specifically to feed a policy that picks a method per (source_load, target_load) pair, but nothing reads that table and acts on it yet. This is the next planned piece of work.
@@ -208,8 +222,7 @@ agent/                               # the agentic workflow — the actual deliv
 ├── react_loop.py                    # THOUGHT/ACTION/OBSERVATION/DECISION orchestration
 └── diagnose.py                      # main entry point: diagnose(signal, condition)
 
-demo.py                              # or demo.ipynb — CLI/notebook demo entry point
-                                      # e.g. `python demo.py --file IR007_3hp.mat`
+demo.py                              # Streamlit UI demo entry point — run: `streamlit run demo.py`
 ```
 
 - `src/` holds the logic currently embedded in the four notebooks (`data_download.ipynb`, `data_splitting_preprocessing.ipynb`, `model_training.ipynb`, `domain_adaptation_evaluation.ipynb`), pulled out into importable modules so `agent/` can call them directly instead of duplicating notebook code.

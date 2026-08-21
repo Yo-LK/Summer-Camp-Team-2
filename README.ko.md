@@ -177,6 +177,20 @@ pip install -r requirements.txt
 
 실행 순서: `data_download.ipynb`(`data/` 채우기) → `data_splitting_preprocessing.ipynb` → `model_training.ipynb`(`models/`에 베이스라인 체크포인트 8개 생성) → `domain_adaptation_evaluation.ipynb`(`models/`에 체크포인트/번들 72개 추가, `assets/*.png` 재생성, `data/agent_policy_table.csv` 생성).
 
+## 데모 실행
+
+`data/`와 `models/`가 채워진 뒤 (또는 미리 빌드된 `models/` 디렉터리가 이미 있다면), Streamlit UI를 실행합니다:
+
+```bash
+streamlit run demo.py
+```
+
+브라우저 탭이 열리며 (기본 주소 `http://localhost:8501`) 원시 `.mat` 진동 신호 파일을 업로드할 수 있습니다. 에이전트는 다음을 수행합니다:
+
+- 신호에 기록된 RPM으로부터 작동 조건(부하)을 추론하며, RPM이 없거나 4가지 알려진 부하 중 어느 것과도 충분히 가깝지 않으면 수동 선택으로 대체합니다
+- THOUGHT → ACTION → OBSERVATION → DECISION 진단 루프(`agent/diagnose.py`, `agent/react_loop.py`)를 실행하여 `data/agent_policy_table.csv`에서 검증된 최적의 도구 체인을 선택하고, 신뢰도가 낮으면 다른 방법으로 대체합니다
+- 예측된 고장 클래스, 신뢰도, 사용된 방법, 그리고 (이 프로젝트 자체 데이터셋의 파일인 경우) 파일명에서 추론한 실제 클래스를 비교용으로 함께 보고합니다
+
 ## 아직 부족한 부분 / 다음 단계
 
 - **에이전트 그 자체** — 프로젝트 목표 대비 가장 큰 공백입니다. `data/agent_policy_table.csv`는 (source_load, target_load) 페어별로 어떤 방법을 선택할지 결정하는 정책에 데이터를 제공하기 위해 존재하지만, 아직 그 테이블을 읽고 행동하는 것은 아무것도 없습니다. 이것이 다음으로 계획된 작업입니다.
@@ -208,8 +222,7 @@ agent/                               # 에이전트 워크플로우 — 실제 �
 ├── react_loop.py                    # THOUGHT/ACTION/OBSERVATION/DECISION 오케스트레이션
 └── diagnose.py                      # 메인 엔트리 포인트: diagnose(signal, condition)
 
-demo.py                              # 또는 demo.ipynb — CLI/노트북 데모 엔트리 포인트
-                                      # 예: `python demo.py --file IR007_3hp.mat`
+demo.py                              # Streamlit UI 데모 엔트리 포인트 — 실행: `streamlit run demo.py`
 ```
 
 - `src/`에는 현재 4개의 노트북(`data_download.ipynb`, `data_splitting_preprocessing.ipynb`, `model_training.ipynb`, `domain_adaptation_evaluation.ipynb`)에 흩어져 있는 로직을 임포트 가능한 모듈로 뽑아내어 담습니다 — 이를 통해 `agent/`가 노트북 코드를 중복 작성하지 않고 직접 호출할 수 있습니다.

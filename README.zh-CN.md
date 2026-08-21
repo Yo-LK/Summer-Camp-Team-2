@@ -177,6 +177,20 @@ pip install -r requirements.txt
 
 按顺序运行：`data_download.ipynb`（填充 `data/`）、`data_splitting_preprocessing.ipynb`、`model_training.ipynb`（在 `models/` 中生成 8 个基线检查点）、`domain_adaptation_evaluation.ipynb`（再向 `models/` 添加 72 个检查点/组合，重新生成 `assets/*.png`，并生成 `data/agent_policy_table.csv`）。
 
+## 运行演示程序
+
+在 `data/` 和 `models/` 已经填充完毕后（或者已经存在预先构建好的 `models/` 目录），启动 Streamlit 界面：
+
+```bash
+streamlit run demo.py
+```
+
+这会打开一个浏览器标签页（默认地址 `http://localhost:8501`），你可以在其中上传一个原始的 `.mat` 振动信号文件，智能体将会：
+
+- 根据信号中记录的转速（RPM）推断其工作负载条件；如果 RPM 缺失，或者与四个已知负载都不够接近，则回退为手动选择
+- 运行 THOUGHT → ACTION → OBSERVATION → DECISION 诊断循环（`agent/diagnose.py`、`agent/react_loop.py`），从 `data/agent_policy_table.csv` 中挑选经过验证的最佳工具链，若置信度过低则回退到其他方法
+- 报告预测的故障类别、置信度、所使用的方法，以及——对于本项目自带数据集中的文件——从文件名推断出的真实类别，供对比参考
+
 ## 尚缺内容 / 后续步骤
 
 - **智能体本身** —— 相对项目目标而言，这是最大的缺口。`data/agent_policy_table.csv` 正是为了给策略提供数据，让它能针对每个 (source_load, target_load) 负载对挑选合适的方法，但目前还没有任何东西读取这张表并据此行动。这是接下来计划要做的工作。
@@ -208,8 +222,7 @@ agent/                               # 智能体工作流 —— 真正的交付
 ├── react_loop.py                    # THOUGHT/ACTION/OBSERVATION/DECISION 编排循环
 └── diagnose.py                      # 主入口：diagnose(signal, condition)
 
-demo.py                              # 或 demo.ipynb —— 命令行/notebook 演示入口
-                                      # 例如 `python demo.py --file IR007_3hp.mat`
+demo.py                              # Streamlit 界面演示入口 —— 运行：`streamlit run demo.py`
 ```
 
 - `src/` 存放目前分散在四个 notebook（`data_download.ipynb`、`data_splitting_preprocessing.ipynb`、`model_training.ipynb`、`domain_adaptation_evaluation.ipynb`）中的逻辑，将其抽取为可导入的模块，使 `agent/` 能够直接调用，而不必重复 notebook 中的代码。
