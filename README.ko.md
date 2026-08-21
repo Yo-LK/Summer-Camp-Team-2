@@ -17,14 +17,14 @@
 
 | # | 목표 | 상태 | 비고 |
 |---|---|---|---|
-| 1 | 데이터셋 구조 로드 및 이해 | ✅ 완료 | `data_download.ipynb`가 데이터를 다운로드하고, 라벨링하고, 검사함 |
+| 1 | 데이터셋 구조 로드 및 이해 | ✅ 완료 | `data_download_exploration.ipynb`가 데이터를 다운로드하고, 라벨링하고, 검사함 |
 | 2 | 진동 신호 분석 | 🟡 부분 완료 | 추출 파이프라인(원시 신호/FFT/포락선/고장 주파수 피크)은 존재하지만, 그 위에서의 분석은 아직 없음 — 이 특징들이 실제로 정상/고장 윈도우를 구분해내는지 검증하는 것이 전혀 없음 |
 | 3 | 적절한 고장 진단 방법 선택 | ✅ 완료 | 10가지 방법을 실제 페어별 수치로 정면 비교했고, `data/agent_policy_table.csv`로 통합했으며, 이제는 사람이 표를 읽는 대신 실제로 동작하는 정책/에이전트(`agent/policy.py`, `agent/react_loop.py`)가 선택을 수행함 |
 | 4 | 운전 조건 간 전이 학습 적용 | 🟢 거의 완료 | 두 가지 실제 적응 방법(파인튜닝된 CNN, CORAL+랜덤 포레스트)을 구현하여 12개 페어 전체에서 평가함; 가장 우수한 변형(부분 동결 CNN, FFT 특징 기반 CORAL+RF)은 target-only 상한값과의 격차를 거의 다 좁힘 — 아래 결과 참고 |
 
 ## 지금까지 만든 것
 
-### `data_download.ipynb` — 다운로드 및 탐색
+### `data_download_exploration.ipynb` — 다운로드 및 탐색
 
 - [CWRU 베어링 데이터 센터](https://engineering.case.edu/bearingdatacenter/48k-drive-end-bearing-fault-data)에서 CWRU의 **정상 베이스라인** 데이터(4개 파일, 0–3 hp 부하별 1개씩)와 **48 kHz 구동측(drive-end) 고장** 데이터(52개 파일: 내륜/볼/외륜 고장, 고장 직경 0.007"/0.014"/0.021", 각각 0–3 hp에서 1개씩)를 다운로드하며, 이미 디스크에 있는 파일은 건너뜁니다.
 - 각 파일을 고장 위치, 직경, 부하, RPM, (외륜 고장의 경우) 시계 방향 위치를 인코딩한 설명적인 이름으로 저장합니다 — 예: `48k_drive_end_fault_inner_race_0.007in_0hp_1797rpm_109.mat` — 라벨이 붙은 하위 폴더 `data/normal_baseline_data/`와 `data/48k_drive_end_fault/`에 나누어 저장합니다.
@@ -68,24 +68,24 @@
 - **고전 머신러닝 베이스라인(적응 없음)** — `source_train`만으로 학습한 일반 랜덤 포레스트를, 각 특징 세트별로 target 도메인에 대해 제로샷으로 평가합니다 — 베이스라인 1의 고전 머신러닝 버전입니다. 이것이 필요한 이유는, 이것이 없으면 CORAL이 실제로 얼마나 기여했는지, 아니면 단지 해당 특징 세트 + RF 자체가 이미 얻고 있는 성능인지 구분할 방법이 없기 때문입니다 — 아래 핵심 요약을 참고하세요.
 - 정합성 검사(sanity check)에서 희소 하위 집합 선택 로직으로 베이스라인 2의 수치를 다시 계산해 `baseline_results.csv`와 일치함을 확인합니다(작은 차이는 GPU 학습의 비결정성 때문), 이를 통해 `windows_by_load.pkl`(원시 윈도우)과 `features_*.npz` 파일(사전 추출된 특징) 사이의 인덱스 기반 윈도우 대응이 올바르다는 것을 검증합니다.
 - **80개 모델을 `models/`에 저장**: 적응 CNN 체크포인트 24개(동결 모드 2가지 × 페어 12개) + CORAL+RF 번들 36개 + 일반 RF 적응-없음 번들 12개(특징 세트 3가지 × 페어 12개 / 부하 4개, `{clf, scaler, pca}`를 joblib으로 덤프), 여기에 앞서 언급한 베이스라인 체크포인트 8개가 더해집니다.
-- **통합 정책 테이블** — 10가지 방법 전체의 정확도를 하나의 넓은 테이블로 재구성합니다. 페어당 1행, 방법당 1열이며, **`data/agent_policy_table.csv`**로 저장됩니다. 이것이 `agent/policy.py`가 실제로 로드하고 조회하는 인계 산출물입니다 — 아래 결과를 참고하세요.
+- **통합 정책 테이블** — 10가지 방법 전체의 정확도를 하나의 넓은 테이블로 재구성합니다. 페어당 1행, 방법당 1열이며, **`data/agent_policy_table.csv`**로 저장됩니다. 이것이 `agent/policy.py`가 실제로 로드하고 조회하는 인계 산출물입니다 — 아래 결과를 참고하세요. 매크로 F1에 대해서도 동일한 재구성을 반복하여 **`data/agent_policy_table_f1.csv`**로 저장합니다(`agent/policy.py`는 정확도만으로 순위를 매기므로 이 테이블을 사용하지 않습니다 — 어떤 방법의 순위가 클래스 불균형을 반영하는 지표에서도 유지되는지 확인하고 싶은 사람을 위한 것입니다).
 
-**`data/agent_policy_table.csv` — 페어당 1행, 방법당 1열(정확도):**
+**`data/agent_policy_table.csv` — 페어당 1행, 방법당 1열(정확도).** CWT(`data/cwt_baseline_results.csv`, `cwt_baseline_exploration.ipynb`)도 비교를 위해 함께 표시했습니다 — 베이스라인에 불과하고(파인튜닝/CORAL 버전 없음) `agent/policy.py`에도 연결되어 있지 않기 때문에, `agent_policy_table.csv`에 합쳐지지 않고 별도의 CSV로 관리됩니다:
 
-| source→target | Baseline1 (no adapt) | Baseline2 (target-only) | CNN partial-freeze | CNN full-freeze | RF no-adapt (fft) | RF no-adapt (envelope) | RF no-adapt (fault_freq) | CORAL+RF (fft) | CORAL+RF (envelope) | CORAL+RF (fault_freq) |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 0→1 | 0.615 | 0.814 | 0.829 | 0.699 | 0.758 | 0.665 | 0.562 | 0.655 | 0.590 | 0.568 |
-| 0→2 | 0.668 | 0.839 | 0.901 | 0.758 | 0.795 | 0.658 | 0.655 | 0.770 | 0.671 | 0.537 |
-| 0→3 | 0.494 | 0.752 | 0.736 | 0.680 | 0.730 | 0.615 | 0.599 | 0.680 | 0.562 | 0.547 |
-| 1→0 | 0.617 | 0.906 | 0.641 | 0.602 | 0.781 | 0.617 | 0.586 | 0.750 | 0.523 | 0.602 |
-| 1→2 | 0.919 | 0.839 | 0.910 | 0.922 | 0.811 | 0.860 | 0.596 | 0.898 | 0.835 | 0.739 |
-| 1→3 | 0.904 | 0.752 | 0.941 | 0.904 | 0.826 | 0.826 | 0.624 | 0.661 | 0.839 | 0.665 |
-| 2→0 | 0.398 | 0.906 | 0.336 | 0.508 | 0.734 | 0.680 | 0.570 | 0.711 | 0.500 | 0.531 |
-| 2→1 | 0.839 | 0.814 | 0.904 | 0.857 | 0.854 | 0.829 | 0.655 | 0.907 | 0.811 | 0.724 |
-| 2→3 | 0.696 | 0.752 | 0.981 | 0.860 | 0.888 | 0.907 | 0.727 | 0.876 | 0.876 | 0.767 |
-| 3→0 | 0.570 | 0.906 | 0.648 | 0.602 | 0.703 | 0.461 | 0.617 | 0.695 | 0.586 | 0.555 |
-| 3→1 | 0.780 | 0.814 | 0.891 | 0.786 | 0.717 | 0.602 | 0.581 | 0.826 | 0.814 | 0.637 |
-| 3→2 | 0.860 | 0.839 | 1.000 | 0.904 | 0.823 | 0.792 | 0.801 | 1.000 | 0.991 | 0.786 |
+| source→target | Baseline1 (no adapt) | Baseline2 (target-only) | CNN partial-freeze | CNN full-freeze | RF no-adapt (fft) | RF no-adapt (envelope) | RF no-adapt (fault_freq) | CORAL+RF (fft) | CORAL+RF (envelope) | CORAL+RF (fault_freq) | CWT (no adapt) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0→1 | 0.615 | 0.814 | 0.829 | 0.699 | 0.758 | 0.665 | 0.562 | 0.655 | 0.590 | 0.568 | 0.565 |
+| 0→2 | 0.668 | 0.839 | 0.901 | 0.758 | 0.795 | 0.658 | 0.655 | 0.770 | 0.671 | 0.537 | 0.593 |
+| 0→3 | 0.494 | 0.752 | 0.736 | 0.680 | 0.730 | 0.615 | 0.599 | 0.680 | 0.562 | 0.547 | 0.441 |
+| 1→0 | 0.617 | 0.906 | 0.641 | 0.602 | 0.781 | 0.617 | 0.586 | 0.750 | 0.523 | 0.602 | 0.719 |
+| 1→2 | 0.919 | 0.839 | 0.910 | 0.922 | 0.811 | 0.860 | 0.596 | 0.898 | 0.835 | 0.739 | 0.963 |
+| 1→3 | 0.904 | 0.752 | 0.941 | 0.904 | 0.826 | 0.826 | 0.624 | 0.661 | 0.839 | 0.665 | 0.786 |
+| 2→0 | 0.398 | 0.906 | 0.336 | 0.508 | 0.734 | 0.680 | 0.570 | 0.711 | 0.500 | 0.531 | 0.625 |
+| 2→1 | 0.839 | 0.814 | 0.904 | 0.857 | 0.854 | 0.829 | 0.655 | 0.907 | 0.811 | 0.724 | 0.946 |
+| 2→3 | 0.696 | 0.752 | 0.981 | 0.860 | 0.888 | 0.907 | 0.727 | 0.876 | 0.876 | 0.767 | 0.699 |
+| 3→0 | 0.570 | 0.906 | 0.648 | 0.602 | 0.703 | 0.461 | 0.617 | 0.695 | 0.586 | 0.555 | 0.500 |
+| 3→1 | 0.780 | 0.814 | 0.891 | 0.786 | 0.717 | 0.602 | 0.581 | 0.826 | 0.814 | 0.637 | 0.621 |
+| 3→2 | 0.860 | 0.839 | 1.000 | 0.904 | 0.823 | 0.792 | 0.801 | 1.000 | 0.991 | 0.786 | 0.748 |
 
 모든 페어에서 이기는 단일 방법은 없습니다 — 예를 들어 `RF no-adapt (fft)`는 1→0 페어에서 가장 우수한 제로샷 방법입니다(0.781, 모든 CNN 및 CORAL 변형을 직접 앞섭니다) — 이러한 페어별 편차야말로 에이전트 정책이 실제로 조건으로 삼아야 할 신호입니다.
 
@@ -101,10 +101,29 @@
 | CORAL + 랜덤 포레스트 (포락선 특징) | 71.6% |
 | RF, 적응 없음 (포락선 특징) | 70.9% |
 | 베이스라인 1 — source-only | 69.7% |
+| CWT + 2D CNN, 적응 없음 | 68.4% |
 | CORAL + 랜덤 포레스트 (fault-freq 특징) | 63.8% |
 | RF, 적응 없음 (fault-freq 특징) | 63.1% |
 
-![방법별 평균 정확도](assets/mean_accuracy.png)
+![모델 계열별로 그룹화한 방법별 평균 정확도](assets/mean_accuracy_grouped.png)
+
+**결과 — 12개 페어 전체 평균 매크로 F1**(`data/agent_policy_table_f1.csv` + `data/mean_f1_by_method.csv`에서 — 정확도와 달리 매크로 F1은 모든 클래스를 동등하게 취급합니다):
+
+| 방법 | 평균 매크로 F1 |
+|---|---|
+| 베이스라인 2 — target-only, 클래스당 10% | 76.9% |
+| 적응 CNN (부분 동결) | 74.3% |
+| RF, 적응 없음 (FFT 특징) | 68.3% |
+| 적응 CNN (완전 동결) | 68.1% |
+| CORAL + 랜덤 포레스트 (FFT 특징) | 67.9% |
+| CORAL + 랜덤 포레스트 (포락선 특징) | 60.9% |
+| 베이스라인 1 — source-only | 59.7% |
+| RF, 적응 없음 (포락선 특징) | 59.3% |
+| CWT + 2D CNN, 적응 없음 | 59.3% |
+| CORAL + 랜덤 포레스트 (fault-freq 특징) | 54.3% |
+| RF, 적응 없음 (fault-freq 특징) | 53.1% |
+
+주목할 점은 순위가 정확도와 완전히 같지는 않다는 것입니다: **CORAL + 랜덤 포레스트 (FFT)**는 정확도 기준 3위에서 F1 기준 5위로 내려가며, RF 적응 없음 (FFT)과 적응 CNN (완전 동결) 모두에게 추월당합니다 — 이는 이 방법의 정확도 우위가 여러 클래스에 고르게 분포된 것이 아니라 크거나 쉬운 클래스에 불균형하게 치우쳐 있음을 시사하며, 정확도만으로는 드러나지 않는 부분입니다.
 
 **페어별 전체 결과**(위 평균값뿐 아니라 12개 페어 각각의 데이터)는 **`data/full_comparison_results.csv`**와 아래 차트에 있습니다:
 
@@ -127,8 +146,8 @@
 
 탐색적 실험이며 베이스라인에 한정됩니다(전체 적응 매트릭스에는 의도적으로 포함하지 않았습니다): 연속 웨이블릿 변환(CWT) 스케일로그램(Morlet 웨이블릿, 150–3000 Hz 범위의 32개 스케일, 시간축을 128포인트로 다운샘플링 → 윈도우당 32×128 이미지)을 2D CNN(`src.CNN2D`)과 결합하여, 부하별로 전체 train 분할에서 모델 하나를 학습하고 제로샷 크로스 도메인으로 평가했습니다 — 직접 비교를 위해 베이스라인 1과 동일한 프로토콜을 사용했습니다.
 
-- 12개 페어 전체 평균 정확도: **69.2%** — 기존 원시 윈도우 1D CNN 베이스라인 1(69.7%)과 사실상 동일하며, FFT 특징 기반 RF(78.5%)보다는 확실히 뒤처집니다.
-- 체크포인트는 `models/cwt_baseline1_full_load{0-3}.pt`에, 결과는 `data/cwt_baseline_results.csv`에 저장됩니다.
+- 12개 페어 전체 평균 정확도: **68.4%**(전체 비교 표와 그룹화된 차트는 위 참고) — 기존 원시 윈도우 1D CNN 베이스라인 1(69.7%)과 사실상 동일하며, FFT 특징 기반 RF(78.5%)보다는 확실히 뒤처집니다. 평균 매크로 F1: **59.3%**로, RF 적응 없음(포락선 특징)과 사실상 동일합니다 — 위 F1 표 참고.
+- 체크포인트는 `models/cwt_baseline1_full_load{0-3}.pt`에, 결과는 `data/cwt_baseline_results.csv`에 저장됩니다. 또한 CWT를 `data/agent_policy_table.csv`/`agent_policy_table_f1.csv`와 대조하는 11가지 방법 그룹화 비교에도 합쳐서, `assets/mean_accuracy_grouped.png`와 `data/mean_f1_by_method.csv`로 저장합니다.
 - 결론: 더 풍부한 2D 시간-주파수 입력이 여기서는 훨씬 단순한 원시 1D 윈도우 CNN을 뚜렷이 능가하지 못했으므로, 다른 특징 표현들이 거쳤던 전체 파인튜닝/CORAL 비교에는 포함하지 않았습니다 — 배제된 것이 아니라, 들어가는 추가 연산 비용 대비 명확한 이득이 보이지 않았을 뿐입니다.
 
 ### `src/` — 재사용 가능한 파이프라인 로직, 그리고 `agent/` — 진단 에이전트
@@ -160,7 +179,9 @@ data/
 ├── baseline_results.csv        # 베이스라인 1 & 2 정확도/매크로 F1, 부하 페어당 1행 (총 12개)
 ├── full_comparison_results.csv # 10가지 방법 전체 정확도/매크로 F1, 부하 페어당 1행 (총 12개)
 ├── cwt_baseline_results.csv    # CWT+2D CNN 베이스라인 정확도/매크로 F1, 부하 페어당 1행 (총 12개)
-└── agent_policy_table.csv      # 넓은 테이블: 페어당 1행 × 방법 10열, 정확도만 — 에이전트 인계 산출물
+├── agent_policy_table.csv      # 넓은 테이블: 페어당 1행 × 방법 10열, 정확도만 — 에이전트 인계 산출물
+├── agent_policy_table_f1.csv   # 위와 동일한 형태, 매크로 F1 (agent/policy.py는 사용하지 않음)
+└── mean_f1_by_method.csv       # 방법별 평균 매크로 F1(12페어 평균), 모델 계열별 그룹화, CWT 포함
 
 models/                          # gitignore 대상 아님 — 총 84개 파일
 ├── baseline1_full_load{0-3}.pt          # 베이스라인 1 체크포인트 (4개)
@@ -172,12 +193,13 @@ models/                          # gitignore 대상 아님 — 총 84개 파일
 
 assets/                          # gitignore 대상 아님 — README 차트 이미지
 ├── mean_accuracy.png
+├── mean_accuracy_grouped.png      # CWT 포함, 모델 계열별로 그룹화
 ├── cnn_methods_per_pair.png
 ├── coral_methods_per_pair.png
 └── rf_coral_vs_noadapt.png
 ```
 
-`data/`는 gitignore 대상입니다(대용량 바이너리 파일) — 그 안의 모든 것은 `data_download.ipynb` → `data_splitting_preprocessing.ipynb` → `model_training.ipynb` → `domain_adaptation_evaluation.ipynb` 순서로 실행하면 재현 가능합니다. `models/`와 `assets/`는 gitignore 대상이 아닙니다 — `assets/`에는 이 README의 이미지가 들어 있고, `models/`는 `data/`만큼의 대용량 바이너리 데이터는 아니기 때문입니다.
+`data/`는 gitignore 대상입니다(대용량 바이너리 파일) — 그 안의 모든 것은 `data_download_exploration.ipynb` → `data_splitting_preprocessing.ipynb` → `model_training.ipynb` → `domain_adaptation_evaluation.ipynb` 순서로 실행하면 재현 가능합니다. `models/`와 `assets/`는 gitignore 대상이 아닙니다 — `assets/`에는 이 README의 이미지가 들어 있고, `models/`는 `data/`만큼의 대용량 바이너리 데이터는 아니기 때문입니다.
 
 ## 환경 설정
 
@@ -199,7 +221,7 @@ pip install -r requirements.txt
 
 `requirements.txt`의 `torch`는 플랫폼에 맞는 CUDA 빌드를 `pip`가 자동으로 찾아 설치합니다; CPU 전용 환경에서는 CPU 빌드가 설치되며, 어느 쪽이든 별도로 손댈 부분은 없습니다.
 
-실행 순서: `data_download.ipynb`(`data/` 채우기) → `data_splitting_preprocessing.ipynb` → `model_training.ipynb`(`models/`에 베이스라인 체크포인트 8개 생성) → `domain_adaptation_evaluation.ipynb`(`models/`에 체크포인트/번들 72개 추가, `assets/*.png` 재생성, `data/agent_policy_table.csv` 생성). `cwt_baseline_exploration.ipynb`는 선택 사항이며 나머지와 독립적입니다 — `data/windows_by_load.pkl`만 있으면 되고, 에이전트나 데모가 이것에 의존하지 않습니다.
+실행 순서: `data_download_exploration.ipynb`(`data/` 채우기) → `data_splitting_preprocessing.ipynb` → `model_training.ipynb`(`models/`에 베이스라인 체크포인트 8개 생성) → `domain_adaptation_evaluation.ipynb`(`models/`에 체크포인트/번들 72개 추가, `assets/*.png` 재생성, `data/agent_policy_table.csv` 생성). `cwt_baseline_exploration.ipynb`는 선택 사항이며 나머지와 독립적입니다 — `data/windows_by_load.pkl`만 있으면 되고, 에이전트나 데모가 이것에 의존하지 않습니다.
 
 ## 데모 실행
 

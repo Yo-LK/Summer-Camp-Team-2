@@ -17,14 +17,14 @@ Build an agent that can:
 
 | # | Objective | Status | Notes |
 |---|---|---|---|
-| 1 | Load & understand dataset structure | ✅ Done | `data_download.ipynb` downloads, labels, and inspects the data |
+| 1 | Load & understand dataset structure | ✅ Done | `data_download_exploration.ipynb` downloads, labels, and inspects the data |
 | 2 | Analyze vibration signals | 🟡 Partial | Extraction pipeline exists (raw/FFT/envelope/fault-frequency peaks), but no analysis on top of it yet — nothing validates that these features actually separate healthy from faulty windows |
 | 3 | Select fault diagnosis methods | ✅ Done | 10 methods compared head-to-head, consolidated into `data/agent_policy_table.csv`, and actually selected by a working policy/agent (`agent/policy.py`, `agent/react_loop.py`) rather than a human reading the table |
 | 4 | Transfer learning across operating conditions | 🟢 Mostly done | Two real adaptation methods (fine-tuned CNN, CORAL+Random Forest) implemented and evaluated across all 12 pairs; the best variants (partial-freeze CNN, CORAL+RF on FFT features) close nearly all the gap to the target-only ceiling — see results below |
 
 ## What's been built
 
-### `data_download.ipynb` — download & explore
+### `data_download_exploration.ipynb` — download & explore
 
 - Downloads CWRU's **normal baseline** (4 files, one per load: 0–3 hp) and **48 kHz drive-end fault** data (52 files: inner race / ball / outer race faults, at fault diameters 0.007"/0.014"/0.021", each at 0–3 hp) from the [CWRU Bearing Data Center](https://engineering.case.edu/bearingdatacenter/48k-drive-end-bearing-fault-data), skipping files already on disk.
 - Saves each file under a descriptive name encoding fault location, diameter, load, RPM, and (for outer-race faults) clock position — e.g. `48k_drive_end_fault_inner_race_0.007in_0hp_1797rpm_109.mat` — into labeled subfolders: `data/normal_baseline_data/` and `data/48k_drive_end_fault/`.
@@ -68,24 +68,24 @@ Builds real domain-adaptation methods on top of the two baselines and compares e
 - **Classical ML baseline (no adaptation)** — a plain Random Forest trained on `source_train` only, evaluated zero-shot cross-domain, for each of the 3 feature sets — the classical-ML analog of Baseline 1. Necessary because without it, there was no way to tell how much CORAL was actually contributing versus what the feature set + RF already gets on its own — see takeaways below.
 - A sanity check re-derives Baseline 2's numbers from the scarce-subset logic and confirms they match `baseline_results.csv` (within GPU training non-determinism), validating that the index-based window selection lines up correctly between `windows_by_load.pkl` (raw windows) and the `features_*.npz` files (pre-extracted features).
 - **80 models saved to `models/`**: 24 adapted-CNN checkpoints (2 freeze modes × 12 pairs) + 36 CORAL+RF bundles + 12 plain-RF-no-adapt bundles (3 feature sets × 12 pairs / 4 loads, joblib dumps of `{clf, scaler, pca}`), alongside the 8 baseline checkpoints above.
-- **Consolidated policy table** — all 10 methods' accuracy reshaped into one wide table, one row per pair, one column per method, saved to **`data/agent_policy_table.csv`**. This is the hand-off artifact `agent/policy.py` actually loads and queries — see results below.
+- **Consolidated policy table** — all 10 methods' accuracy reshaped into one wide table, one row per pair, one column per method, saved to **`data/agent_policy_table.csv`**. This is the hand-off artifact `agent/policy.py` actually loads and queries — see results below. The same reshape is repeated for macro-F1 into **`data/agent_policy_table_f1.csv`** (not used by `agent/policy.py`, which ranks by accuracy only — this is for anyone checking whether a method's ranking survives under a class-imbalance-aware metric).
 
-**`data/agent_policy_table.csv` — one row per pair, one column per method (accuracy):**
+**`data/agent_policy_table.csv` — one row per pair, one column per method (accuracy).** CWT (from `data/cwt_baseline_results.csv`, `cwt_baseline_exploration.ipynb`) is shown alongside for comparison — it's tracked in its own CSV rather than merged into `agent_policy_table.csv`, since it's baseline-only (no fine-tuning/CORAL variant) and not wired into `agent/policy.py`:
 
-| source→target | Baseline1 (no adapt) | Baseline2 (target-only) | CNN partial-freeze | CNN full-freeze | RF no-adapt (fft) | RF no-adapt (envelope) | RF no-adapt (fault_freq) | CORAL+RF (fft) | CORAL+RF (envelope) | CORAL+RF (fault_freq) |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 0→1 | 0.615 | 0.814 | 0.829 | 0.699 | 0.758 | 0.665 | 0.562 | 0.655 | 0.590 | 0.568 |
-| 0→2 | 0.668 | 0.839 | 0.901 | 0.758 | 0.795 | 0.658 | 0.655 | 0.770 | 0.671 | 0.537 |
-| 0→3 | 0.494 | 0.752 | 0.736 | 0.680 | 0.730 | 0.615 | 0.599 | 0.680 | 0.562 | 0.547 |
-| 1→0 | 0.617 | 0.906 | 0.641 | 0.602 | 0.781 | 0.617 | 0.586 | 0.750 | 0.523 | 0.602 |
-| 1→2 | 0.919 | 0.839 | 0.910 | 0.922 | 0.811 | 0.860 | 0.596 | 0.898 | 0.835 | 0.739 |
-| 1→3 | 0.904 | 0.752 | 0.941 | 0.904 | 0.826 | 0.826 | 0.624 | 0.661 | 0.839 | 0.665 |
-| 2→0 | 0.398 | 0.906 | 0.336 | 0.508 | 0.734 | 0.680 | 0.570 | 0.711 | 0.500 | 0.531 |
-| 2→1 | 0.839 | 0.814 | 0.904 | 0.857 | 0.854 | 0.829 | 0.655 | 0.907 | 0.811 | 0.724 |
-| 2→3 | 0.696 | 0.752 | 0.981 | 0.860 | 0.888 | 0.907 | 0.727 | 0.876 | 0.876 | 0.767 |
-| 3→0 | 0.570 | 0.906 | 0.648 | 0.602 | 0.703 | 0.461 | 0.617 | 0.695 | 0.586 | 0.555 |
-| 3→1 | 0.780 | 0.814 | 0.891 | 0.786 | 0.717 | 0.602 | 0.581 | 0.826 | 0.814 | 0.637 |
-| 3→2 | 0.860 | 0.839 | 1.000 | 0.904 | 0.823 | 0.792 | 0.801 | 1.000 | 0.991 | 0.786 |
+| source→target | Baseline1 (no adapt) | Baseline2 (target-only) | CNN partial-freeze | CNN full-freeze | RF no-adapt (fft) | RF no-adapt (envelope) | RF no-adapt (fault_freq) | CORAL+RF (fft) | CORAL+RF (envelope) | CORAL+RF (fault_freq) | CWT (no adapt) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0→1 | 0.615 | 0.814 | 0.829 | 0.699 | 0.758 | 0.665 | 0.562 | 0.655 | 0.590 | 0.568 | 0.565 |
+| 0→2 | 0.668 | 0.839 | 0.901 | 0.758 | 0.795 | 0.658 | 0.655 | 0.770 | 0.671 | 0.537 | 0.593 |
+| 0→3 | 0.494 | 0.752 | 0.736 | 0.680 | 0.730 | 0.615 | 0.599 | 0.680 | 0.562 | 0.547 | 0.441 |
+| 1→0 | 0.617 | 0.906 | 0.641 | 0.602 | 0.781 | 0.617 | 0.586 | 0.750 | 0.523 | 0.602 | 0.719 |
+| 1→2 | 0.919 | 0.839 | 0.910 | 0.922 | 0.811 | 0.860 | 0.596 | 0.898 | 0.835 | 0.739 | 0.963 |
+| 1→3 | 0.904 | 0.752 | 0.941 | 0.904 | 0.826 | 0.826 | 0.624 | 0.661 | 0.839 | 0.665 | 0.786 |
+| 2→0 | 0.398 | 0.906 | 0.336 | 0.508 | 0.734 | 0.680 | 0.570 | 0.711 | 0.500 | 0.531 | 0.625 |
+| 2→1 | 0.839 | 0.814 | 0.904 | 0.857 | 0.854 | 0.829 | 0.655 | 0.907 | 0.811 | 0.724 | 0.946 |
+| 2→3 | 0.696 | 0.752 | 0.981 | 0.860 | 0.888 | 0.907 | 0.727 | 0.876 | 0.876 | 0.767 | 0.699 |
+| 3→0 | 0.570 | 0.906 | 0.648 | 0.602 | 0.703 | 0.461 | 0.617 | 0.695 | 0.586 | 0.555 | 0.500 |
+| 3→1 | 0.780 | 0.814 | 0.891 | 0.786 | 0.717 | 0.602 | 0.581 | 0.826 | 0.814 | 0.637 | 0.621 |
+| 3→2 | 0.860 | 0.839 | 1.000 | 0.904 | 0.823 | 0.792 | 0.801 | 1.000 | 0.991 | 0.786 | 0.748 |
 
 No single method wins every pair — e.g. `RF no-adapt (fft)` is the single best zero-shot method at 1→0 (0.781, beating every CNN and CORAL variant outright) — that per-pair variability is the actual signal an agent policy needs to condition on.
 
@@ -101,10 +101,29 @@ No single method wins every pair — e.g. `RF no-adapt (fft)` is the single best
 | CORAL + Random Forest (envelope features) | 71.6% |
 | RF, no adaptation (envelope features) | 70.9% |
 | Baseline 1 — source-only | 69.7% |
+| CWT + 2D CNN, no adaptation | 68.4% |
 | CORAL + Random Forest (fault-freq features) | 63.8% |
 | RF, no adaptation (fault-freq features) | 63.1% |
 
-![Mean accuracy by method](assets/mean_accuracy.png)
+![Mean accuracy by method, grouped by model family](assets/mean_accuracy_grouped.png)
+
+**Results — mean macro-F1 across all 12 pairs** (from `data/agent_policy_table_f1.csv` + `data/mean_f1_by_method.csv`; macro-F1 weights every class equally, unlike accuracy):
+
+| Method | Mean macro-F1 |
+|---|---|
+| Baseline 2 — target-only, 10%/class | 76.9% |
+| Adapted CNN (partial freeze) | 74.3% |
+| RF, no adaptation (FFT features) | 68.3% |
+| Adapted CNN (full freeze) | 68.1% |
+| CORAL + Random Forest (FFT features) | 67.9% |
+| CORAL + Random Forest (envelope features) | 60.9% |
+| Baseline 1 — source-only | 59.7% |
+| RF, no adaptation (envelope features) | 59.3% |
+| CWT + 2D CNN, no adaptation | 59.3% |
+| CORAL + Random Forest (fault-freq features) | 54.3% |
+| RF, no adaptation (fault-freq features) | 53.1% |
+
+Notably, the ranking isn't identical to accuracy: **CORAL+RF (FFT)** drops from #3 by accuracy to #5 by F1, overtaken by both RF no-adapt (FFT) and Adapted CNN (full freeze) — its accuracy edge is coming disproportionately from larger/easier classes rather than being spread evenly, which raw accuracy alone doesn't reveal.
 
 **Full per-pair results** (all 12 pairs individually, not just the mean above) are in **`data/full_comparison_results.csv`** and the charts below:
 
@@ -127,8 +146,8 @@ No single method wins every pair — e.g. `RF no-adapt (fft)` is the single best
 
 Exploratory, baseline-only (deliberately not carried through the full adaptation matrix): a Continuous Wavelet Transform scalogram (Morlet wavelet, 32 scales over 150–3000 Hz, time axis downsampled to 128 → a 32×128 image per window) paired with a 2D CNN (`src.CNN2D`), trained one model per load on its full train split and evaluated zero-shot cross-domain — the same protocol as Baseline 1, for a direct comparison.
 
-- Mean accuracy across all 12 pairs: **69.2%** — essentially tied with the raw-window 1D CNN Baseline 1 (69.7%), and well behind RF on FFT features (78.5%).
-- Checkpoints saved to `models/cwt_baseline1_full_load{0-3}.pt`; results in `data/cwt_baseline_results.csv`.
+- Mean accuracy across all 12 pairs: **68.4%** (see the full comparison table and grouped chart above) — essentially tied with the raw-window 1D CNN Baseline 1 (69.7%), and well behind RF on FFT features (78.5%). Mean macro-F1: **59.3%**, essentially tied with RF no-adapt (envelope) — see the F1 table above.
+- Checkpoints saved to `models/cwt_baseline1_full_load{0-3}.pt`; results in `data/cwt_baseline_results.csv`. Also merges CWT into an 11-method grouped comparison against `data/agent_policy_table.csv`/`agent_policy_table_f1.csv`, saved to `assets/mean_accuracy_grouped.png` and `data/mean_f1_by_method.csv`.
 - Take: a richer 2D time-frequency input didn't obviously beat the much simpler raw-1D-window CNN here, so it wasn't carried into the full fine-tuning/CORAL comparison other representations went through — not ruled out, just not an obvious win for the added compute.
 
 ### `src/` — reusable pipeline logic, and `agent/` — the diagnosis agent
@@ -160,7 +179,9 @@ data/
 ├── baseline_results.csv        # baseline 1 & 2 accuracy/macro-F1, one row per load pair (12 total)
 ├── full_comparison_results.csv # all 10 methods' accuracy/macro-F1, one row per load pair (12 total)
 ├── cwt_baseline_results.csv    # CWT+2D-CNN baseline accuracy/macro-F1, one row per load pair (12 total)
-└── agent_policy_table.csv      # wide table: 1 row/pair × 10 method columns, accuracy only — the agent hand-off artifact
+├── agent_policy_table.csv      # wide table: 1 row/pair × 10 method columns, accuracy only — the agent hand-off artifact
+├── agent_policy_table_f1.csv   # same shape as above, macro-F1 instead of accuracy (not used by agent/policy.py)
+└── mean_f1_by_method.csv       # mean macro-F1 per method (12-pair average), grouped by model family, incl. CWT
 
 models/                          # not gitignored — 84 files total
 ├── baseline1_full_load{0-3}.pt          # baseline 1 checkpoints (4)
@@ -172,12 +193,13 @@ models/                          # not gitignored — 84 files total
 
 assets/                          # not gitignored — README chart images
 ├── mean_accuracy.png
+├── mean_accuracy_grouped.png      # includes CWT, grouped by model family
 ├── cnn_methods_per_pair.png
 ├── coral_methods_per_pair.png
 └── rf_coral_vs_noadapt.png
 ```
 
-`data/` is gitignored (large binary files) — everything in it is reproducible by running `data_download.ipynb`, then `data_splitting_preprocessing.ipynb`, then `model_training.ipynb`, then `domain_adaptation_evaluation.ipynb`. `models/` and `assets/` are not gitignored, since `assets/` holds this README's images and `models/` isn't large-binary-data in the same sense as `data/`.
+`data/` is gitignored (large binary files) — everything in it is reproducible by running `data_download_exploration.ipynb`, then `data_splitting_preprocessing.ipynb`, then `model_training.ipynb`, then `domain_adaptation_evaluation.ipynb`. `models/` and `assets/` are not gitignored, since `assets/` holds this README's images and `models/` isn't large-binary-data in the same sense as `data/`.
 
 ## Setup
 
@@ -199,7 +221,7 @@ pip install -r requirements.txt
 
 `torch` in `requirements.txt` pulls whatever CUDA build `pip` resolves for your platform automatically; CPU-only machines get the CPU build, no changes needed either way.
 
-Run in order: `data_download.ipynb` (populates `data/`), `data_splitting_preprocessing.ipynb`, `model_training.ipynb` (populates `models/` with the 8 baseline checkpoints), `domain_adaptation_evaluation.ipynb` (adds 72 more checkpoints/bundles to `models/`, regenerates `assets/*.png`, and produces `data/agent_policy_table.csv`). `cwt_baseline_exploration.ipynb` is optional and independent of the rest — it only needs `data/windows_by_load.pkl` and isn't required for the agent or demo to work.
+Run in order: `data_download_exploration.ipynb` (populates `data/`), `data_splitting_preprocessing.ipynb`, `model_training.ipynb` (populates `models/` with the 8 baseline checkpoints), `domain_adaptation_evaluation.ipynb` (adds 72 more checkpoints/bundles to `models/`, regenerates `assets/*.png`, and produces `data/agent_policy_table.csv`). `cwt_baseline_exploration.ipynb` is optional and independent of the rest — it only needs `data/windows_by_load.pkl` and isn't required for the agent or demo to work.
 
 ## Running the demo
 

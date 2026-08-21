@@ -17,14 +17,14 @@
 
 | # | 目标 | 状态 | 说明 |
 |---|---|---|---|
-| 1 | 加载并理解数据集结构 | ✅ 已完成 | `data_download.ipynb` 下载、标注并检查数据 |
+| 1 | 加载并理解数据集结构 | ✅ 已完成 | `data_download_exploration.ipynb` 下载、标注并检查数据 |
 | 2 | 分析振动信号 | 🟡 部分完成 | 特征提取流程已存在（原始信号/FFT/包络谱/故障特征频率），但尚未在此基础上做进一步分析——目前没有任何验证证明这些特征真的能区分健康窗口和故障窗口 |
 | 3 | 选择合适的故障诊断方法 | ✅ 已完成 | 10 种方法已经在真实的逐对数据上进行了正面对比，并汇总进 `data/agent_policy_table.csv`，如今真正由一个可运行的策略/智能体（`agent/policy.py`、`agent/react_loop.py`）自动完成选择，而不是靠人来读表 |
 | 4 | 跨工况迁移学习 | 🟢 基本完成 | 两种真实的自适应方法（微调 CNN、CORAL + 随机森林）已经实现并在全部 12 个负载对上评估；表现最好的版本（部分冻结 CNN、基于 FFT 特征的 CORAL+RF）几乎追平了"仅用目标域数据训练"的上限——详见下方结果 |
 
 ## 已完成的工作
 
-### `data_download.ipynb` —— 下载与探索
+### `data_download_exploration.ipynb` —— 下载与探索
 
 - 从 [CWRU 轴承数据中心](https://engineering.case.edu/bearingdatacenter/48k-drive-end-bearing-fault-data) 下载 CWRU 的 **正常基线数据**（4 个文件，对应 0–3 hp 各一个负载）以及 **48 kHz 驱动端故障数据**（52 个文件：内圈/滚珠/外圈故障，故障直径 0.007"/0.014"/0.021"，每种在 0–3 hp 下各有一份），已存在磁盘上的文件会自动跳过。
 - 将每个文件保存为描述性文件名，编码了故障位置、直径、负载、转速，以及（外圈故障时）时钟位置——例如 `48k_drive_end_fault_inner_race_0.007in_0hp_1797rpm_109.mat`——并分别存入带标签的子文件夹：`data/normal_baseline_data/` 与 `data/48k_drive_end_fault/`。
@@ -68,24 +68,24 @@
 - **经典机器学习基线（无自适应）** —— 仅在 `source_train` 上训练的普通随机森林，零样本跨域评估，对三种特征集分别进行——这是基线 1 在经典机器学习一侧的对应版本。这一步是必要的：没有它，就无法判断 CORAL 究竟贡献了多少，还是仅仅体现了该特征集 + RF 本身已有的能力——详见下方结论。
 - 一项完整性检查用稀缺子集选取逻辑重新计算出基线 2 的数值，并确认与 `baseline_results.csv` 中的结果一致（差异仅来自 GPU 训练的不确定性），从而验证了 `windows_by_load.pkl`（原始窗口）与 `features_*.npz` 文件（预提取特征）之间基于索引的窗口对应关系是正确的。
 - **80 个模型保存到 `models/`**：24 个自适应 CNN 检查点（2 种冻结模式 × 12 个负载对）+ 36 个 CORAL+RF 组合 + 12 个普通 RF 无自适应组合（3 种特征集 × 12 对 / 4 个负载，以 joblib 保存 `{clf, scaler, pca}`），加上前面提到的 8 个基线检查点。
-- **汇总策略表** —— 将全部 10 种方法的准确率重塑为一张宽表，每个负载对一行，每种方法一列，保存到 **`data/agent_policy_table.csv`**。这正是 `agent/policy.py` 实际加载并查询的交接产物——详见下方结果。
+- **汇总策略表** —— 将全部 10 种方法的准确率重塑为一张宽表，每个负载对一行，每种方法一列，保存到 **`data/agent_policy_table.csv`**。这正是 `agent/policy.py` 实际加载并查询的交接产物——详见下方结果。同样的重塑针对宏平均 F1 也做了一遍，保存到 **`data/agent_policy_table_f1.csv`**（`agent/policy.py` 并不使用它，后者只按准确率排序——这张表是给想检查某种方法的排名在考虑类别不均衡的指标下是否依然成立的人准备的）。
 
-**`data/agent_policy_table.csv` —— 每个负载对一行，每种方法一列（准确率）：**
+**`data/agent_policy_table.csv` —— 每个负载对一行，每种方法一列（准确率）。** CWT（来自 `data/cwt_baseline_results.csv`，`cwt_baseline_exploration.ipynb`）在此一并列出以便对比——它单独保存在自己的 CSV 中，并没有并入 `agent_policy_table.csv`，因为它只是基线（没有微调/CORAL 版本），也没有接入 `agent/policy.py`：
 
-| source→target | Baseline1 (no adapt) | Baseline2 (target-only) | CNN partial-freeze | CNN full-freeze | RF no-adapt (fft) | RF no-adapt (envelope) | RF no-adapt (fault_freq) | CORAL+RF (fft) | CORAL+RF (envelope) | CORAL+RF (fault_freq) |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 0→1 | 0.615 | 0.814 | 0.829 | 0.699 | 0.758 | 0.665 | 0.562 | 0.655 | 0.590 | 0.568 |
-| 0→2 | 0.668 | 0.839 | 0.901 | 0.758 | 0.795 | 0.658 | 0.655 | 0.770 | 0.671 | 0.537 |
-| 0→3 | 0.494 | 0.752 | 0.736 | 0.680 | 0.730 | 0.615 | 0.599 | 0.680 | 0.562 | 0.547 |
-| 1→0 | 0.617 | 0.906 | 0.641 | 0.602 | 0.781 | 0.617 | 0.586 | 0.750 | 0.523 | 0.602 |
-| 1→2 | 0.919 | 0.839 | 0.910 | 0.922 | 0.811 | 0.860 | 0.596 | 0.898 | 0.835 | 0.739 |
-| 1→3 | 0.904 | 0.752 | 0.941 | 0.904 | 0.826 | 0.826 | 0.624 | 0.661 | 0.839 | 0.665 |
-| 2→0 | 0.398 | 0.906 | 0.336 | 0.508 | 0.734 | 0.680 | 0.570 | 0.711 | 0.500 | 0.531 |
-| 2→1 | 0.839 | 0.814 | 0.904 | 0.857 | 0.854 | 0.829 | 0.655 | 0.907 | 0.811 | 0.724 |
-| 2→3 | 0.696 | 0.752 | 0.981 | 0.860 | 0.888 | 0.907 | 0.727 | 0.876 | 0.876 | 0.767 |
-| 3→0 | 0.570 | 0.906 | 0.648 | 0.602 | 0.703 | 0.461 | 0.617 | 0.695 | 0.586 | 0.555 |
-| 3→1 | 0.780 | 0.814 | 0.891 | 0.786 | 0.717 | 0.602 | 0.581 | 0.826 | 0.814 | 0.637 |
-| 3→2 | 0.860 | 0.839 | 1.000 | 0.904 | 0.823 | 0.792 | 0.801 | 1.000 | 0.991 | 0.786 |
+| source→target | Baseline1 (no adapt) | Baseline2 (target-only) | CNN partial-freeze | CNN full-freeze | RF no-adapt (fft) | RF no-adapt (envelope) | RF no-adapt (fault_freq) | CORAL+RF (fft) | CORAL+RF (envelope) | CORAL+RF (fault_freq) | CWT (no adapt) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0→1 | 0.615 | 0.814 | 0.829 | 0.699 | 0.758 | 0.665 | 0.562 | 0.655 | 0.590 | 0.568 | 0.565 |
+| 0→2 | 0.668 | 0.839 | 0.901 | 0.758 | 0.795 | 0.658 | 0.655 | 0.770 | 0.671 | 0.537 | 0.593 |
+| 0→3 | 0.494 | 0.752 | 0.736 | 0.680 | 0.730 | 0.615 | 0.599 | 0.680 | 0.562 | 0.547 | 0.441 |
+| 1→0 | 0.617 | 0.906 | 0.641 | 0.602 | 0.781 | 0.617 | 0.586 | 0.750 | 0.523 | 0.602 | 0.719 |
+| 1→2 | 0.919 | 0.839 | 0.910 | 0.922 | 0.811 | 0.860 | 0.596 | 0.898 | 0.835 | 0.739 | 0.963 |
+| 1→3 | 0.904 | 0.752 | 0.941 | 0.904 | 0.826 | 0.826 | 0.624 | 0.661 | 0.839 | 0.665 | 0.786 |
+| 2→0 | 0.398 | 0.906 | 0.336 | 0.508 | 0.734 | 0.680 | 0.570 | 0.711 | 0.500 | 0.531 | 0.625 |
+| 2→1 | 0.839 | 0.814 | 0.904 | 0.857 | 0.854 | 0.829 | 0.655 | 0.907 | 0.811 | 0.724 | 0.946 |
+| 2→3 | 0.696 | 0.752 | 0.981 | 0.860 | 0.888 | 0.907 | 0.727 | 0.876 | 0.876 | 0.767 | 0.699 |
+| 3→0 | 0.570 | 0.906 | 0.648 | 0.602 | 0.703 | 0.461 | 0.617 | 0.695 | 0.586 | 0.555 | 0.500 |
+| 3→1 | 0.780 | 0.814 | 0.891 | 0.786 | 0.717 | 0.602 | 0.581 | 0.826 | 0.814 | 0.637 | 0.621 |
+| 3→2 | 0.860 | 0.839 | 1.000 | 0.904 | 0.823 | 0.792 | 0.801 | 1.000 | 0.991 | 0.786 | 0.748 |
 
 未出现任何一种方法能赢下所有负载对——例如 `RF no-adapt (fft)` 在 1→0 这一对上是表现最好的零样本方法（0.781，直接超过所有 CNN 和 CORAL 变体）——这种逐对之间的差异性正是智能体策略需要据以判断的真实信号。
 
@@ -101,10 +101,29 @@
 | CORAL + 随机森林（包络特征） | 71.6% |
 | RF，无自适应（包络特征） | 70.9% |
 | 基线 1 —— 仅源域 | 69.7% |
+| CWT + 2D CNN，无自适应 | 68.4% |
 | CORAL + 随机森林（故障频率特征） | 63.8% |
 | RF，无自适应（故障频率特征） | 63.1% |
 
-![按方法划分的平均准确率](assets/mean_accuracy.png)
+![按方法划分的平均准确率（按模型族分组）](assets/mean_accuracy_grouped.png)
+
+**结果 —— 全部 12 个负载对上的平均宏平均 F1**（来自 `data/agent_policy_table_f1.csv` + `data/mean_f1_by_method.csv`；与准确率不同，宏平均 F1 对每个类别一视同仁）：
+
+| 方法 | 平均宏平均 F1 |
+|---|---|
+| 基线 2 —— 仅目标域，每类 10% | 76.9% |
+| 自适应 CNN（部分冻结） | 74.3% |
+| RF，无自适应（FFT 特征） | 68.3% |
+| 自适应 CNN（完全冻结） | 68.1% |
+| CORAL + 随机森林（FFT 特征） | 67.9% |
+| CORAL + 随机森林（包络特征） | 60.9% |
+| 基线 1 —— 仅源域 | 59.7% |
+| RF，无自适应（包络特征） | 59.3% |
+| CWT + 2D CNN，无自适应 | 59.3% |
+| CORAL + 随机森林（故障频率特征） | 54.3% |
+| RF，无自适应（故障频率特征） | 53.1% |
+
+值得注意的是，排名和按准确率排序并不完全一致：**CORAL + 随机森林（FFT 特征）** 按准确率排第 3，但按 F1 排名跌到第 5，被 RF 无自适应（FFT）和自适应 CNN（完全冻结）反超——这说明它的准确率优势不成比例地来自更大/更容易的类别，而不是均匀分布在各类别上，这一点单看准确率是看不出来的。
 
 **逐对完整结果**（全部 12 个负载对的单独数据，而不仅是上面的平均值）保存在 **`data/full_comparison_results.csv`** 以及下方图表中：
 
@@ -127,8 +146,8 @@
 
 探索性实验，仅限基线（刻意没有纳入完整的自适应流程）：连续小波变换（CWT）尺度图（Morlet 小波，32 个尺度，覆盖 150–3000 Hz，时间轴下采样到 128 点 → 每个窗口得到一张 32×128 的图像），配合一个 2D CNN（`src.CNN2D`），每个负载训练一个模型（在其完整训练集上），并做零样本跨域评估——与基线 1 完全相同的协议，便于直接对比。
 
-- 全部 12 个负载对上的平均准确率：**69.2%**——与原始窗口 1D CNN 基线 1（69.7%）基本持平，明显落后于基于 FFT 特征的 RF（78.5%）。
-- 检查点保存到 `models/cwt_baseline1_full_load{0-3}.pt`；结果保存到 `data/cwt_baseline_results.csv`。
+- 全部 12 个负载对上的平均准确率：**68.4%**（完整对比表格和分组图表见上文）——与原始窗口 1D CNN 基线 1（69.7%）基本持平，明显落后于基于 FFT 特征的 RF（78.5%）。平均宏平均 F1：**59.3%**，与 RF 无自适应（包络特征）基本持平——见上方 F1 表格。
+- 检查点保存到 `models/cwt_baseline1_full_load{0-3}.pt`；结果保存到 `data/cwt_baseline_results.csv`。同时把 CWT 并入一张涵盖 11 种方法的分组对比（对照 `data/agent_policy_table.csv`/`agent_policy_table_f1.csv`），保存到 `assets/mean_accuracy_grouped.png` 和 `data/mean_f1_by_method.csv`。
 - 结论：在这里，更丰富的 2D 时频输入并没有明显超过简单得多的原始 1D 窗口 CNN，因此没有将其纳入其他特征表示所经历的完整微调/CORAL 对比流程——并非被排除在外，只是就所付出的额外计算成本而言，收益并不明显。
 
 ### `src/` —— 可复用的流水线逻辑，以及 `agent/` —— 诊断智能体
@@ -160,7 +179,9 @@ data/
 ├── baseline_results.csv        # 基线 1 & 2 的准确率/宏平均 F1，每个负载对一行（共 12 行）
 ├── full_comparison_results.csv # 全部 10 种方法的准确率/宏平均 F1，每个负载对一行（共 12 行）
 ├── cwt_baseline_results.csv    # CWT+2D CNN 基线的准确率/宏平均 F1，每个负载对一行（共 12 行）
-└── agent_policy_table.csv      # 宽表：每对一行 × 10 个方法列，仅含准确率 —— 智能体交接产物
+├── agent_policy_table.csv      # 宽表：每对一行 × 10 个方法列，仅含准确率 —— 智能体交接产物
+├── agent_policy_table_f1.csv   # 与上表形状相同，换成宏平均 F1（agent/policy.py 不使用此表）
+└── mean_f1_by_method.csv       # 每种方法的平均宏平均 F1（12 对平均），按模型族分组，含 CWT
 
 models/                          # 未被 gitignore —— 共 84 个文件
 ├── baseline1_full_load{0-3}.pt          # 基线 1 检查点（4 个）
@@ -172,12 +193,13 @@ models/                          # 未被 gitignore —— 共 84 个文件
 
 assets/                          # 未被 gitignore —— README 图表
 ├── mean_accuracy.png
+├── mean_accuracy_grouped.png      # 包含 CWT，按模型族分组
 ├── cnn_methods_per_pair.png
 ├── coral_methods_per_pair.png
 └── rf_coral_vs_noadapt.png
 ```
 
-`data/` 被 gitignore 忽略（大型二进制文件）——其中的一切都可以通过依次运行 `data_download.ipynb`、`data_splitting_preprocessing.ipynb`、`model_training.ipynb`、`domain_adaptation_evaluation.ipynb` 复现。`models/` 与 `assets/` 未被忽略，因为 `assets/` 存放的是本 README 所需的图片，而 `models/` 并不像 `data/` 那样属于大型二进制数据。
+`data/` 被 gitignore 忽略（大型二进制文件）——其中的一切都可以通过依次运行 `data_download_exploration.ipynb`、`data_splitting_preprocessing.ipynb`、`model_training.ipynb`、`domain_adaptation_evaluation.ipynb` 复现。`models/` 与 `assets/` 未被忽略，因为 `assets/` 存放的是本 README 所需的图片，而 `models/` 并不像 `data/` 那样属于大型二进制数据。
 
 ## 环境搭建
 
@@ -199,7 +221,7 @@ pip install -r requirements.txt
 
 `requirements.txt` 中的 `torch` 会由 `pip` 根据你的平台自动解析并安装相应的 CUDA 版本；纯 CPU 的机器则会安装 CPU 版本，两种情况都无需手动修改。
 
-按顺序运行：`data_download.ipynb`（填充 `data/`）、`data_splitting_preprocessing.ipynb`、`model_training.ipynb`（在 `models/` 中生成 8 个基线检查点）、`domain_adaptation_evaluation.ipynb`（再向 `models/` 添加 72 个检查点/组合，重新生成 `assets/*.png`，并生成 `data/agent_policy_table.csv`）。`cwt_baseline_exploration.ipynb` 是可选的，与其余部分相互独立——它只需要 `data/windows_by_load.pkl`，智能体和演示程序都不依赖它。
+按顺序运行：`data_download_exploration.ipynb`（填充 `data/`）、`data_splitting_preprocessing.ipynb`、`model_training.ipynb`（在 `models/` 中生成 8 个基线检查点）、`domain_adaptation_evaluation.ipynb`（再向 `models/` 添加 72 个检查点/组合，重新生成 `assets/*.png`，并生成 `data/agent_policy_table.csv`）。`cwt_baseline_exploration.ipynb` 是可选的，与其余部分相互独立——它只需要 `data/windows_by_load.pkl`，智能体和演示程序都不依赖它。
 
 ## 运行演示程序
 
