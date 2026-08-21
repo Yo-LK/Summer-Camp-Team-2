@@ -15,6 +15,7 @@ from .data_loading import (
 )
 from .evaluate import evaluate_classifier, evaluate_cnn, evaluate_predictions
 from .feature_extraction import (
+    extract_cwt,
     extract_envelope,
     extract_fault_freq,
     extract_fft,
@@ -22,7 +23,17 @@ from .feature_extraction import (
     fault_frequencies_hz,
     resolve_rpm,
 )
-from .models import CNN1D, EmbeddingExtractor, LabelPredictor, WindowDataset, class_weights, train_cnn
+from .models import (
+    CNN1D,
+    CNN2D,
+    EmbeddingExtractor,
+    EmbeddingExtractor2D,
+    LabelPredictor,
+    ScalogramDataset,
+    WindowDataset,
+    class_weights,
+    train_cnn,
+)
 from .preprocessing import build_windows_by_load, segment_signal, split_signal_train_test, subsample_indices_per_class
 
 __all__ = [
@@ -30,8 +41,9 @@ __all__ = [
     "CLASS_NAMES", "CLASS_TO_IDX", "N_CLASSES", "build_raw_df", "label_file", "label_for_item",
     "load_mat_file", "load_signals",
     "evaluate_classifier", "evaluate_cnn", "evaluate_predictions",
-    "extract_envelope", "extract_fault_freq", "extract_fft", "extract_time",
+    "extract_cwt", "extract_envelope", "extract_fault_freq", "extract_fft", "extract_time",
     "fault_frequencies_hz", "resolve_rpm",
-    "CNN1D", "EmbeddingExtractor", "LabelPredictor", "WindowDataset", "class_weights", "train_cnn",
+    "CNN1D", "CNN2D", "EmbeddingExtractor", "EmbeddingExtractor2D", "LabelPredictor",
+    "ScalogramDataset", "WindowDataset", "class_weights", "train_cnn",
     "build_windows_by_load", "segment_signal", "split_signal_train_test", "subsample_indices_per_class",
 ]

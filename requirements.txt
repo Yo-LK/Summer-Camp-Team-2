@@ -7,3 +7,5 @@ jupyter==1.1.1
 scikit-learn==1.7.2
 joblib==1.5.3
 torch==2.13.0  # CUDA build varies by platform; pip installs the right one for your system
+streamlit==1.62.0
+pywavelets==1.8.0

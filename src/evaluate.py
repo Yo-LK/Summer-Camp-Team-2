@@ -1,12 +1,13 @@
 """Accuracy / F1 / confusion-matrix evaluation helpers for CNN and sklearn-style classifiers."""
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Type
 
 import numpy as np
 import torch
+import torch.nn as nn
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
-from .models import CNN1D, WindowDataset
+from .models import WindowDataset
 
 
 def evaluate_predictions(y_true: Sequence[int], y_pred: Sequence[int], class_names: Optional[list] = None) -> dict:
@@ -22,11 +23,17 @@ def evaluate_predictions(y_true: Sequence[int], y_pred: Sequence[int], class_nam
 
 
 @torch.no_grad()
-def evaluate_cnn(model: CNN1D, items: Sequence[dict], device: str = "cpu", batch_size: int = 32) -> dict:
-    """Run a CNN1D over items and score its predictions."""
+def evaluate_cnn(
+    model: nn.Module,
+    items: Sequence[dict],
+    device: str = "cpu",
+    batch_size: int = 32,
+    dataset_cls: Type[Dataset] = WindowDataset,
+) -> dict:
+    """Run a CNN (CNN1D or CNN2D) over items and score its predictions."""
     model.to(device)
     model.eval()
-    loader = DataLoader(WindowDataset(items), batch_size=batch_size)
+    loader = DataLoader(dataset_cls(items), batch_size=batch_size)
     y_true, y_pred = [], []
     for x, y in loader:
         preds = model(x.to(device)).argmax(dim=1).cpu().numpy()
