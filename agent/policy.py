@@ -12,6 +12,13 @@ import pandas as pd
 
 POLICY_TABLE_PATH = os.path.join("data", "agent_policy_table.csv")
 
+# The only loads the agent is allowed to treat as a pretrained source domain, even
+# though the underlying results table/model artifacts cover all 4 loads as sources.
+# This is a deliberate research constraint, not a data limitation: it forces the agent
+# to exercise transfer learning whenever it meets an "unknown" operating condition
+# (load 2 or 3) instead of just handing it a same-domain model that happens to exist.
+KNOWN_SOURCE_LOADS = {0, 1}
+
 # Method column (as it appears in agent_policy_table.csv) -> how to resolve it into a
 # concrete agent/tools.py call for a given (source_load, target_load) operating condition.
 #

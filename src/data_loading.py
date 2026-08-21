@@ -38,15 +38,71 @@ def load_mat_file(path: str, simplify_cells: bool = True) -> dict:
     return {k: v for k, v in mat.items() if not k.startswith("__")}
 
 
+NORMAL_RECORD_IDS = {
+    "normal_0hp.mat": 97,
+    "normal_1hp.mat": 98,
+    "normal_2hp.mat": 99,
+    "normal_3hp.mat": 100,
+}
+
+
+def expected_record_id(path: str) -> int:
+    """Return the original CWRU record number represented by ``path``."""
+    filename = os.path.basename(path)
+    if filename in NORMAL_RECORD_IDS:
+        return NORMAL_RECORD_IDS[filename]
+
+    # Descriptive project filename ending in the original CWRU record number.
+    match = re.search(r"_(\d+)\.mat$", filename)
+    if match:
+        return int(match.group(1))
+
+    # Unrenamed CWRU filename, for example 99.mat.
+    match = re.fullmatch(r"(\d+)\.mat", filename)
+    if match:
+        return int(match.group(1))
+
+    raise ValueError(f"cannot determine CWRU record number from '{filename}'")
+
+
 def load_signals(path: str) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Optional[int]]:
-    """Load a raw CWRU .mat file and return (DE, FE, BA, rpm); any of which may be None."""
+    """Load the DE/FE/BA/RPM variables belonging to this CWRU record.
+
+    Some CWRU files contain variables copied from another record, so a suffix-only
+    key match (e.g. any key ending in "DE_time") can silently load the wrong signal
+    when a file has more than one such key. When the filename encodes the original
+    CWRU record number, that's used to pick the exact key and rule out ambiguity.
+    Otherwise (e.g. a freshly uploaded file with an arbitrary filename), this falls
+    back to a plain suffix match — fine as long as there's exactly one candidate key;
+    it only raises if multiple candidates exist and there's no filename-derived record
+    number available to disambiguate between them.
+    """
     mat = load_mat_file(path, simplify_cells=False)
+    try:
+        prefix = f"X{expected_record_id(path):03d}"
+    except ValueError:
+        prefix = None
 
-    def find(suffix):
-        matches = [k for k in mat if k.endswith(suffix)]
-        return mat[matches[0]].flatten() if matches else None
+    def find(suffix: str, required: bool = False):
+        if prefix is not None:
+            expected_key = f"{prefix}RPM" if suffix == "RPM" else f"{prefix}_{suffix}"
+            if expected_key in mat:
+                return np.asarray(mat[expected_key]).flatten()
 
-    de = find("DE_time")
+        candidates = sorted(k for k in mat if k.endswith(suffix))
+        if len(candidates) == 1:
+            return np.asarray(mat[candidates[0]]).flatten()
+
+        if candidates and required:
+            raise ValueError(
+                f"{os.path.basename(path)}: multiple keys end with '{suffix}' {candidates} "
+                "and the record number could not be resolved from the filename to disambiguate them"
+            )
+        if required and not candidates:
+            raise ValueError(f"{os.path.basename(path)}: no key ending with '{suffix}' found")
+        return None
+
+    de = find("DE_time", required=True)
     fe = find("FE_time")
     ba = find("BA_time")
     rpm_arr = find("RPM")
