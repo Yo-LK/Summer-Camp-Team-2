@@ -11,7 +11,7 @@ Build an agent that can:
 3. Select appropriate fault diagnosis methods
 4. Apply transfer learning across different operating conditions (motor loads)
 
-**Current state:** the full data pipeline (download → split/window/feature-extraction → baselines → adaptation methods) is done and has produced a single consolidated results table (`data/agent_policy_table.csv`, 12 pairs × 10 methods) that's ready to feed an agent's decision policy. That agent/orchestration layer — the actual "build an agent" part of the project goal — is the next unbuilt piece; everything so far is a manually-run notebook pipeline that produces the inputs an agent would need.
+**Current state:** the full data pipeline (download → split/window/feature-extraction → baselines → adaptation methods) is done and has produced a single consolidated results table (`data/agent_policy_table.csv`, 12 pairs × 10 methods). That table now feeds a working agent (`agent/`) — a policy lookup plus a THOUGHT → ACTION → OBSERVATION → DECISION loop — exposed through a Streamlit demo (`demo.py`) that diagnoses an uploaded signal end-to-end. The agent is deliberately restricted to only knowing loads 0 and 1 as pretrained source domains (`agent.policy.KNOWN_SOURCE_LOADS`), so an unfamiliar load (2 or 3) forces it to exercise transfer learning rather than reach for a same-domain shortcut.
 
 ## Status against the 4 objectives
 
@@ -19,7 +19,7 @@ Build an agent that can:
 |---|---|---|---|
 | 1 | Load & understand dataset structure | ✅ Done | `data_download.ipynb` downloads, labels, and inspects the data |
 | 2 | Analyze vibration signals | 🟡 Partial | Extraction pipeline exists (raw/FFT/envelope/fault-frequency peaks), but no analysis on top of it yet — nothing validates that these features actually separate healthy from faulty windows |
-| 3 | Select fault diagnosis methods | 🟢 Mostly done | 10 methods compared head-to-head with real per-pair numbers, consolidated into `data/agent_policy_table.csv` — the remaining gap is that "selection" is still a human reading a table, not a policy/agent |
+| 3 | Select fault diagnosis methods | ✅ Done | 10 methods compared head-to-head, consolidated into `data/agent_policy_table.csv`, and actually selected by a working policy/agent (`agent/policy.py`, `agent/react_loop.py`) rather than a human reading the table |
 | 4 | Transfer learning across operating conditions | 🟢 Mostly done | Two real adaptation methods (fine-tuned CNN, CORAL+Random Forest) implemented and evaluated across all 12 pairs; the best variants (partial-freeze CNN, CORAL+RF on FFT features) close nearly all the gap to the target-only ceiling — see results below |
 
 ## What's been built
@@ -68,7 +68,7 @@ Builds real domain-adaptation methods on top of the two baselines and compares e
 - **Classical ML baseline (no adaptation)** — a plain Random Forest trained on `source_train` only, evaluated zero-shot cross-domain, for each of the 3 feature sets — the classical-ML analog of Baseline 1. Necessary because without it, there was no way to tell how much CORAL was actually contributing versus what the feature set + RF already gets on its own — see takeaways below.
 - A sanity check re-derives Baseline 2's numbers from the scarce-subset logic and confirms they match `baseline_results.csv` (within GPU training non-determinism), validating that the index-based window selection lines up correctly between `windows_by_load.pkl` (raw windows) and the `features_*.npz` files (pre-extracted features).
 - **80 models saved to `models/`**: 24 adapted-CNN checkpoints (2 freeze modes × 12 pairs) + 36 CORAL+RF bundles + 12 plain-RF-no-adapt bundles (3 feature sets × 12 pairs / 4 loads, joblib dumps of `{clf, scaler, pca}`), alongside the 8 baseline checkpoints above.
-- **Consolidated policy table** — all 10 methods' accuracy reshaped into one wide table, one row per pair, one column per method, saved to **`data/agent_policy_table.csv`**. This is the intended hand-off artifact for the next phase (an agent that picks which method to trust for a given source→target pair) — see results below.
+- **Consolidated policy table** — all 10 methods' accuracy reshaped into one wide table, one row per pair, one column per method, saved to **`data/agent_policy_table.csv`**. This is the hand-off artifact `agent/policy.py` actually loads and queries — see results below.
 
 **`data/agent_policy_table.csv` — one row per pair, one column per method (accuracy):**
 
@@ -123,6 +123,28 @@ No single method wins every pair — e.g. `RF no-adapt (fft)` is the single best
 - No adaptation method — CNN or classical — clearly *beats* Baseline 2 on average; the best land close to it, not above it. Leveraging source knowledge hasn't yet been shown to buy more than training directly on the same amount of scarce target data, for this task.
 - The domain gap is pair-dependent, not uniform: e.g. at 2→0, Baseline 1 (39.8%) actually beats the partial-freeze adapted CNN (33.6%) — adaptation isn't guaranteed to help, and can occasionally hurt relative to doing nothing.
 
+### `cwt_baseline_exploration.ipynb` — does a richer feature representation help?
+
+Exploratory, baseline-only (deliberately not carried through the full adaptation matrix): a Continuous Wavelet Transform scalogram (Morlet wavelet, 32 scales over 150–3000 Hz, time axis downsampled to 128 → a 32×128 image per window) paired with a 2D CNN (`src.CNN2D`), trained one model per load on its full train split and evaluated zero-shot cross-domain — the same protocol as Baseline 1, for a direct comparison.
+
+- Mean accuracy across all 12 pairs: **69.2%** — essentially tied with the raw-window 1D CNN Baseline 1 (69.7%), and well behind RF on FFT features (78.5%).
+- Checkpoints saved to `models/cwt_baseline1_full_load{0-3}.pt`; results in `data/cwt_baseline_results.csv`.
+- Take: a richer 2D time-frequency input didn't obviously beat the much simpler raw-1D-window CNN here, so it wasn't carried into the full fine-tuning/CORAL comparison other representations went through — not ruled out, just not an obvious win for the added compute.
+
+### `src/` — reusable pipeline logic, and `agent/` — the diagnosis agent
+
+`src/` pulls the logic embedded in the four notebooks above into an importable package (`data_loading.py`, `preprocessing.py`, `feature_extraction.py`, `models.py`, `adaptation.py`, `evaluate.py`). The notebooks themselves stay self-contained — each still redefines its own copy of the logic it needs, for readability — but `agent/` and `demo.py` call `src/` directly rather than duplicating any of it.
+
+`agent/` is the actual agentic workflow:
+
+- **`agent/tools.py`** — wraps `src/` as agent-callable actions: load a signal, window it, extract any of the 4 feature representations, load a trained checkpoint/bundle, run CNN or RF inference, CORAL-align features, fine-tune a CNN, score predictions.
+- **`agent/policy.py`** — a stateless lookup over `data/agent_policy_table.csv`: given a `(source_load, target_load)` pair, ranks every validated method by accuracy and resolves the winner into a concrete tool call (which checkpoint/bundle, which `agent/tools.py` function). Also defines `KNOWN_SOURCE_LOADS = {0, 1}` — the agent is deliberately restricted to only these as pretrained source domains, even though the underlying results cover all 4 loads as sources, specifically so an unfamiliar load (2 or 3) forces transfer learning instead of a same-domain shortcut.
+- **`agent/react_loop.py`** — the THOUGHT → ACTION → OBSERVATION → DECISION loop: THOUGHT asks `policy.py` for the best remaining method, ACTION runs it via `tools.py`, OBSERVATION records the prediction and its confidence, DECISION accepts it or falls back to the next-ranked method (up to `max_attempts`) if confidence is too low.
+- **`agent/diagnose.py`** — the entry point, `diagnose(signal, condition)`: windows the signal, picks the best known source domain for `condition` (or validates an explicit one against `KNOWN_SOURCE_LOADS`), and runs the react loop.
+- **`demo.py`** — a Streamlit UI on top of `diagnose()`; see [Running the demo](#running-the-demo) below.
+
+Worth flagging honestly: "adapt" in the agent's loop always means *selecting an already-adapted checkpoint* — fine-tuned or CORAL-aligned offline, back in `domain_adaptation_evaluation.ipynb` — never computing adaptation live against the uploaded signal. Doing that online wouldn't be that meaningful here anyway: supervised fine-tuning needs labels a diagnostic upload doesn't have, and CORAL from a single file's windows would just be a noisier version of the statistics already baked into the offline bundles.
+
 ## Data layout
 
 ```
@@ -137,14 +159,16 @@ data/
 ├── features_fault_freq.npz     # BPFO/BPFI/BSF peak magnitudes (RMS-normalized), (5601, 9), + per-window metadata
 ├── baseline_results.csv        # baseline 1 & 2 accuracy/macro-F1, one row per load pair (12 total)
 ├── full_comparison_results.csv # all 10 methods' accuracy/macro-F1, one row per load pair (12 total)
+├── cwt_baseline_results.csv    # CWT+2D-CNN baseline accuracy/macro-F1, one row per load pair (12 total)
 └── agent_policy_table.csv      # wide table: 1 row/pair × 10 method columns, accuracy only — the agent hand-off artifact
 
-models/                          # not gitignored — 80 files total
+models/                          # not gitignored — 84 files total
 ├── baseline1_full_load{0-3}.pt          # baseline 1 checkpoints (4)
 ├── baseline2_scarce_load{0-3}.pt        # baseline 2 checkpoints (4)
 ├── adapted_cnn_{full,partial}_{S}to{T}.pt   # adapted CNN checkpoints (2 modes × 12 pairs = 24)
 ├── rf_noadapt_{fault_freq,fft,envelope}_load{0-3}.joblib  # plain-RF-no-adapt bundles (3 feature sets × 4 loads = 12)
-└── coral_rf_{fault_freq,fft,envelope}_{S}to{T}.joblib  # CORAL+RF bundles (3 feature sets × 12 pairs = 36)
+├── coral_rf_{fault_freq,fft,envelope}_{S}to{T}.joblib  # CORAL+RF bundles (3 feature sets × 12 pairs = 36)
+└── cwt_baseline1_full_load{0-3}.pt      # CWT+2D-CNN baseline checkpoints (4)
 
 assets/                          # not gitignored — README chart images
 ├── mean_accuracy.png
@@ -175,7 +199,7 @@ pip install -r requirements.txt
 
 `torch` in `requirements.txt` pulls whatever CUDA build `pip` resolves for your platform automatically; CPU-only machines get the CPU build, no changes needed either way.
 
-Run in order: `data_download.ipynb` (populates `data/`), `data_splitting_preprocessing.ipynb`, `model_training.ipynb` (populates `models/` with the 8 baseline checkpoints), `domain_adaptation_evaluation.ipynb` (adds 72 more checkpoints/bundles to `models/`, regenerates `assets/*.png`, and produces `data/agent_policy_table.csv`).
+Run in order: `data_download.ipynb` (populates `data/`), `data_splitting_preprocessing.ipynb`, `model_training.ipynb` (populates `models/` with the 8 baseline checkpoints), `domain_adaptation_evaluation.ipynb` (adds 72 more checkpoints/bundles to `models/`, regenerates `assets/*.png`, and produces `data/agent_policy_table.csv`). `cwt_baseline_exploration.ipynb` is optional and independent of the rest — it only needs `data/windows_by_load.pkl` and isn't required for the agent or demo to work.
 
 ## Running the demo
 
@@ -193,39 +217,52 @@ This opens a browser tab (default `http://localhost:8501`) where you can upload 
 
 ## What's missing / next steps
 
-- **The agent itself** — this is the biggest gap relative to the project goal. `data/agent_policy_table.csv` exists specifically to feed a policy that picks a method per (source_load, target_load) pair, but nothing reads that table and acts on it yet. This is the next planned piece of work.
-- **Objective 2 (signal analysis)** has an extraction pipeline now (raw/FFT/envelope/fault-frequency peaks) but no *analysis* on top of it — no visualization or statistics comparing extracted features across fault types/severities, no validation that the BPFO/BPFI/BSF peaks actually separate healthy from faulty windows, and no classical time-domain statistical features (RMS, kurtosis, skewness, crest factor).
-- **Objective 3 (method selection)** has the comparison data an agent needs (`agent_policy_table.csv`), but the "selection" logic itself doesn't exist yet — that's the agent work above. Also untested: `features_time` (the 4th extracted feature set) was never used for anything, and no method has been tried on `FE_time` (fan-end) or combined DE+FE signals.
-- **Objective 4 (transfer learning)** has two real adaptation methods now (fine-tuned CNN, CORAL+Random Forest) and both are competitive, but neither *beats* Baseline 2 on average — the actual value-add of "leveraging source knowledge" over "just use the scarce target labels directly" hasn't been demonstrated yet for this task. Untried: MMD/DANN-style adversarial domain adaptation, differential learning rates for the adapted CNN's unfrozen conv block vs. its head, and CORAL on combined feature sets (e.g. FFT + fault-freq concatenated) rather than one at a time.
-- **Objective 1** is done — scoped to the drive-end fault data and normal baseline data.
+- **Objective 2 (signal analysis)** still has no *analysis* on top of the extraction pipeline — no visualization or statistics comparing extracted features across fault types/severities, no validation that the BPFO/BPFI/BSF peaks actually separate healthy from faulty windows, and no classical time-domain statistical features (RMS, kurtosis, skewness, crest factor).
+- **The agent only ever selects among offline-computed results — it never adapts live.** `react_loop.py`'s "adapt" step loads an already fine-tuned/CORAL-aligned checkpoint; `agent/tools.py` exposes `fine_tune_cnn()`/`coral_align()`, but nothing in the diagnosis path calls them. Supervised fine-tuning needs labels a diagnostic upload doesn't have, and CORAL from a single file's windows would just be a noisier version of the statistics already baked into the offline bundles — meaningful online adaptation would need a genuinely new, unlabeled deployment batch, not a single-file diagnosis.
+- **CWT + 2D CNN** (`cwt_baseline_exploration.ipynb`) was only tested as a zero-shot baseline (69.2%, tied with the existing raw-window CNN) — not carried through the fine-tuning/CORAL matrix the other four representations went through, since the baseline result didn't clearly justify the added compute.
+- Untried on the existing representations: MMD/DANN-style adversarial domain adaptation, differential learning rates for the adapted CNN's unfrozen conv block vs. its head, CORAL on combined feature sets (e.g. FFT + fault-freq concatenated), and `features_time`/`FE_time` (fan-end)/combined DE+FE signals were never used for anything.
+- No adaptation method — CNN or classical — clearly *beats* Baseline 2 on average (see takeaways above); leveraging source knowledge hasn't yet been shown to buy more than training directly on the same amount of scarce target data, for this task.
+- Objectives 1 and 3 are done.
 
-## Planned structure for the agent
+## Conclusion
 
-Everything above lives in notebooks. The next phase pulls the reusable logic out of those notebooks into an importable `src/` package, then builds the actual agent on top of it:
+All four objectives are met end to end: the data pipeline downloads, labels, and explores the CWRU 48kHz drive-end dataset; the feature-extraction pipeline produces five representations (raw window, FFT, envelope, fault-frequency peaks, and CWT scalogram) with two real bugs found and fixed along the way (a fault-frequency tolerance narrower than the FFT bin spacing, and a missing RMS normalization that was distorting CORAL's covariance alignment by ~300x); 11 methods were compared head-to-head across all 12 ordered source→target load pairs and consolidated into `data/agent_policy_table.csv`; and two real adaptation methods (fine-tuned CNN, CORAL+Random Forest) were implemented and verified leak-free — fine-tuning uses a stratified scarce subsample of the target's *train* split only, confirmed to have zero overlap with the held-out *test* split by both code inspection and empirical checks.
+
+On top of that, the agent itself is built and working: `agent/policy.py` is a stateless lookup over the results table, `agent/react_loop.py` runs a THOUGHT → ACTION → OBSERVATION → DECISION loop that picks the best validated method and falls back to alternatives on low confidence, `agent/diagnose.py` ties it together into a single `diagnose(signal, condition)` call, and `demo.py` puts a Streamlit UI on top — upload a signal, the agent infers its operating condition from RPM, restricts itself to a deliberately small set of "known" source domains (`KNOWN_SOURCE_LOADS = {0, 1}`) so loads 2 and 3 genuinely exercise transfer learning rather than a same-domain shortcut, and reports its prediction alongside a full reasoning trace.
+
+The most important result to report plainly, not spin: **no adaptation method beats Baseline 2** (a model trained directly on a scarce 10%-per-class labeled subset of the target load, with no source domain involved at all) on average across the 12 pairs. CNN partial-freeze fine-tuning comes close (81.0% vs. 82.7%), and both CORAL+RF and RF-no-adapt land respectably on FFT features (~78.5%), but the core promise of transfer learning — that a source-trained model beats just using the small amount of target-domain labels directly — hasn't been demonstrated for this task. That's a genuine, useful finding about when adaptation is and isn't worth the complexity, not a failure to hide.
+
+## Limitations
+
+- **Results don't generalize past this dataset.** Everything here is one bearing type (SKF 6205), one data source (CWRU), and four discrete load/RPM conditions. Whether any of these methods — or the "adaptation doesn't beat scarce labels" finding itself — holds on a different rig, sensor, or bearing type is untested and can't be answered without new labeled data.
+- **The agent never adapts live.** As covered above, `react_loop.py` only *selects* among checkpoints that were fine-tuned or CORAL-aligned offline; `agent/tools.py`'s `fine_tune_cnn()`/`coral_align()` exist but aren't called from the diagnosis path. This is a real capability gap, not just an unoptimized corner — a diagnostic upload has no labels for supervised fine-tuning, and a single file is too little data for CORAL to improve on what's already cached.
+- **`KNOWN_SOURCE_LOADS` is a demonstration constraint, not a technical one.** Restricting the agent to loads {0, 1} as source domains is a deliberate choice to force transfer learning to be exercised for loads 2/3 — checkpoints and results for all 4 loads as sources already exist and would perform at least as well if the constraint were lifted.
+- **The demo's ground-truth comparison only works on this project's own files.** `demo.py` infers the "actual class" from CWRU's descriptive filenames — for a genuinely new, unlabeled signal there's no way to check whether a diagnosis was correct.
+- **Numbers carry ~1 percentage point of run-to-run noise.** Observed directly: retraining CWT with the same seed shifted its mean accuracy from 69.2% to 68.4%, from GPU training non-determinism. Every accuracy figure in this README should be read as approximate, not exact to three significant figures.
+- **No automated test suite.** Correctness has been checked through manual notebook re-execution, targeted verification scripts, and direct inspection (e.g. the train/test leakage check) — not CI-backed tests, so regressions would currently only be caught by rerunning the notebooks by hand.
+
+## Repository structure
+
+Quick reference for how the pieces described above fit together — see the "`src/` — reusable pipeline logic, and `agent/` — the diagnosis agent" section above for what each file actually does:
 
 ```
-src/                                # reusable, importable code — used by the agent
+src/                                # reusable, importable code — used by agent/ and demo.py
 ├── __init__.py
-├── data_loading.py                 # load_mat_file(), build_raw_df()
-├── preprocessing.py                # split_signal_train_test(), segment_signal()
-├── feature_extraction.py           # extract_time(), extract_fft(),
-│                                      extract_envelope(), extract_fault_freq()
-├── models.py                       # CNN1D class definition
+├── data_loading.py                 # load_mat_file(), build_raw_df(), label_file(), label_for_item()
+├── preprocessing.py                # split_signal_train_test(), segment_signal(), build_windows_by_load()
+├── feature_extraction.py           # extract_time(), extract_fft(), extract_envelope(),
+│                                      extract_fault_freq(), extract_cwt()
+├── models.py                       # CNN1D, CNN2D, WindowDataset, ScalogramDataset, train_cnn()
 ├── adaptation.py                   # fine_tune(), coral_transform()
 └── evaluate.py                     # accuracy/F1/confusion matrix helpers
 
-agent/                               # the agentic workflow — the actual deliverable
+agent/                               # the agentic workflow
 ├── __init__.py
 ├── tools.py                         # wraps src/ functions as agent-callable tools
-├── policy.py                        # loads comparison_table.csv, builds/queries
-│                                       the source→target → best-method lookup
+├── policy.py                        # loads agent_policy_table.csv, builds/queries the
+│                                       source→target → best-method lookup; KNOWN_SOURCE_LOADS
 ├── react_loop.py                    # THOUGHT/ACTION/OBSERVATION/DECISION orchestration
 └── diagnose.py                      # main entry point: diagnose(signal, condition)
 
 demo.py                              # Streamlit UI demo entry point — run: `streamlit run demo.py`
 ```
-
-- `src/` holds the logic currently embedded in the four notebooks (`data_download.ipynb`, `data_splitting_preprocessing.ipynb`, `model_training.ipynb`, `domain_adaptation_evaluation.ipynb`), pulled out into importable modules so `agent/` can call them directly instead of duplicating notebook code.
-- `agent/policy.py`'s `comparison_table.csv` is this repo's existing `data/agent_policy_table.csv` — the lookup table already built and verified in `domain_adaptation_evaluation.ipynb`.
-- `agent/react_loop.py` is the THOUGHT/ACTION/OBSERVATION/DECISION orchestration loop — the part that actually makes this an agent rather than a static lookup.
-- `agent/diagnose.py` is the entry point a caller uses: `diagnose(signal, condition)`.

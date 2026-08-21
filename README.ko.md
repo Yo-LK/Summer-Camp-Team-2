@@ -11,7 +11,7 @@
 3. 적절한 고장 진단 방법 선택하기
 4. 서로 다른 운전 조건(모터 부하) 간에 전이 학습 적용하기
 
-**현재 상태:** 전체 데이터 파이프라인(다운로드 → 분할/윈도우/특징 추출 → 베이스라인 → 적응 방법)이 완료되었으며, 에이전트의 의사결정 정책에 바로 활용할 수 있는 하나의 통합 결과 테이블(`data/agent_policy_table.csv`, 12개 페어 × 10개 방법)을 생성했습니다. 이 에이전트/오케스트레이션 레이어 — 프로젝트 목표에서 실제로 "에이전트를 구축"하는 부분 — 이 아직 만들어지지 않은 다음 단계입니다. 지금까지는 모두 에이전트가 필요로 할 입력들을 만들어내는, 수동으로 실행하는 노트북 파이프라인입니다.
+**현재 상태:** 전체 데이터 파이프라인(다운로드 → 분할/윈도우/특징 추출 → 베이스라인 → 적응 방법)이 완료되었으며, 하나의 통합 결과 테이블(`data/agent_policy_table.csv`, 12개 페어 × 10개 방법)을 생성했습니다. 이 테이블은 이제 실제로 동작하는 에이전트(`agent/`) — 정책 룩업과 THOUGHT → ACTION → OBSERVATION → DECISION 루프로 구성됨 — 를 구동하며, Streamlit 데모(`demo.py`)를 통해 업로드된 신호를 처음부터 끝까지 진단하는 형태로 노출됩니다. 이 에이전트는 부하 0과 1만을 알려진 사전 학습 소스 도메인으로 알도록 의도적으로 제한되어 있어(`agent.policy.KNOWN_SOURCE_LOADS`), 낯선 부하(2 또는 3)를 만나면 같은 도메인의 지름길로 가는 대신 반드시 전이 학습을 실제로 수행해야 합니다.
 
 ## 4가지 목표 대비 진행 상황
 
@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 1 | 데이터셋 구조 로드 및 이해 | ✅ 완료 | `data_download.ipynb`가 데이터를 다운로드하고, 라벨링하고, 검사함 |
 | 2 | 진동 신호 분석 | 🟡 부분 완료 | 추출 파이프라인(원시 신호/FFT/포락선/고장 주파수 피크)은 존재하지만, 그 위에서의 분석은 아직 없음 — 이 특징들이 실제로 정상/고장 윈도우를 구분해내는지 검증하는 것이 전혀 없음 |
-| 3 | 적절한 고장 진단 방법 선택 | 🟢 거의 완료 | 10가지 방법을 실제 페어별 수치로 정면 비교했고, `data/agent_policy_table.csv`로 통합함 — 남은 격차는 "선택"이 아직 사람이 표를 읽는 방식이지, 정책/에이전트가 하는 것이 아니라는 점 |
+| 3 | 적절한 고장 진단 방법 선택 | ✅ 완료 | 10가지 방법을 실제 페어별 수치로 정면 비교했고, `data/agent_policy_table.csv`로 통합했으며, 이제는 사람이 표를 읽는 대신 실제로 동작하는 정책/에이전트(`agent/policy.py`, `agent/react_loop.py`)가 선택을 수행함 |
 | 4 | 운전 조건 간 전이 학습 적용 | 🟢 거의 완료 | 두 가지 실제 적응 방법(파인튜닝된 CNN, CORAL+랜덤 포레스트)을 구현하여 12개 페어 전체에서 평가함; 가장 우수한 변형(부분 동결 CNN, FFT 특징 기반 CORAL+RF)은 target-only 상한값과의 격차를 거의 다 좁힘 — 아래 결과 참고 |
 
 ## 지금까지 만든 것
@@ -68,7 +68,7 @@
 - **고전 머신러닝 베이스라인(적응 없음)** — `source_train`만으로 학습한 일반 랜덤 포레스트를, 각 특징 세트별로 target 도메인에 대해 제로샷으로 평가합니다 — 베이스라인 1의 고전 머신러닝 버전입니다. 이것이 필요한 이유는, 이것이 없으면 CORAL이 실제로 얼마나 기여했는지, 아니면 단지 해당 특징 세트 + RF 자체가 이미 얻고 있는 성능인지 구분할 방법이 없기 때문입니다 — 아래 핵심 요약을 참고하세요.
 - 정합성 검사(sanity check)에서 희소 하위 집합 선택 로직으로 베이스라인 2의 수치를 다시 계산해 `baseline_results.csv`와 일치함을 확인합니다(작은 차이는 GPU 학습의 비결정성 때문), 이를 통해 `windows_by_load.pkl`(원시 윈도우)과 `features_*.npz` 파일(사전 추출된 특징) 사이의 인덱스 기반 윈도우 대응이 올바르다는 것을 검증합니다.
 - **80개 모델을 `models/`에 저장**: 적응 CNN 체크포인트 24개(동결 모드 2가지 × 페어 12개) + CORAL+RF 번들 36개 + 일반 RF 적응-없음 번들 12개(특징 세트 3가지 × 페어 12개 / 부하 4개, `{clf, scaler, pca}`를 joblib으로 덤프), 여기에 앞서 언급한 베이스라인 체크포인트 8개가 더해집니다.
-- **통합 정책 테이블** — 10가지 방법 전체의 정확도를 하나의 넓은 테이블로 재구성합니다. 페어당 1행, 방법당 1열이며, **`data/agent_policy_table.csv`**로 저장됩니다. 이것이 다음 단계(주어진 source→target 페어에 대해 어떤 방법을 신뢰할지 결정하는 에이전트)를 위해 의도된 인계 산출물입니다 — 아래 결과를 참고하세요.
+- **통합 정책 테이블** — 10가지 방법 전체의 정확도를 하나의 넓은 테이블로 재구성합니다. 페어당 1행, 방법당 1열이며, **`data/agent_policy_table.csv`**로 저장됩니다. 이것이 `agent/policy.py`가 실제로 로드하고 조회하는 인계 산출물입니다 — 아래 결과를 참고하세요.
 
 **`data/agent_policy_table.csv` — 페어당 1행, 방법당 1열(정확도):**
 
@@ -123,6 +123,28 @@
 - CNN이든 고전적 방법이든, 어떤 적응 방법도 평균적으로 베이스라인 2를 명확히 **능가하지는** 못합니다 — 가장 우수한 방법들도 그것을 넘어서기보다는 근접할 뿐입니다. 이 과제에 한해서는, source 지식을 활용하는 것이 동일한 양의 희소한 target 데이터로 직접 학습하는 것보다 더 나은 결과를 가져다준다는 것이 아직 입증되지 않았습니다.
 - 도메인 격차는 페어마다 다르며 균일하지 않습니다: 예를 들어 2→0에서는 베이스라인 1(39.8%)이 오히려 부분 동결 적응 CNN(33.6%)을 능가합니다 — 적응이 항상 도움이 되는 것은 아니며, 때로는 아무것도 하지 않는 것보다 더 나쁠 수도 있습니다.
 
+### `cwt_baseline_exploration.ipynb` — 더 풍부한 특징 표현이 도움이 될까?
+
+탐색적 실험이며 베이스라인에 한정됩니다(전체 적응 매트릭스에는 의도적으로 포함하지 않았습니다): 연속 웨이블릿 변환(CWT) 스케일로그램(Morlet 웨이블릿, 150–3000 Hz 범위의 32개 스케일, 시간축을 128포인트로 다운샘플링 → 윈도우당 32×128 이미지)을 2D CNN(`src.CNN2D`)과 결합하여, 부하별로 전체 train 분할에서 모델 하나를 학습하고 제로샷 크로스 도메인으로 평가했습니다 — 직접 비교를 위해 베이스라인 1과 동일한 프로토콜을 사용했습니다.
+
+- 12개 페어 전체 평균 정확도: **69.2%** — 기존 원시 윈도우 1D CNN 베이스라인 1(69.7%)과 사실상 동일하며, FFT 특징 기반 RF(78.5%)보다는 확실히 뒤처집니다.
+- 체크포인트는 `models/cwt_baseline1_full_load{0-3}.pt`에, 결과는 `data/cwt_baseline_results.csv`에 저장됩니다.
+- 결론: 더 풍부한 2D 시간-주파수 입력이 여기서는 훨씬 단순한 원시 1D 윈도우 CNN을 뚜렷이 능가하지 못했으므로, 다른 특징 표현들이 거쳤던 전체 파인튜닝/CORAL 비교에는 포함하지 않았습니다 — 배제된 것이 아니라, 들어가는 추가 연산 비용 대비 명확한 이득이 보이지 않았을 뿐입니다.
+
+### `src/` — 재사용 가능한 파이프라인 로직, 그리고 `agent/` — 진단 에이전트
+
+`src/`는 위 네 개 노트북에 담겨 있던 로직을 임포트 가능한 패키지(`data_loading.py`, `preprocessing.py`, `feature_extraction.py`, `models.py`, `adaptation.py`, `evaluate.py`)로 뽑아냅니다. 노트북 자체는 여전히 자기 완결적으로 남아 있습니다 — 가독성을 위해 각 노트북은 필요한 로직을 여전히 자체적으로 재정의합니다 — 하지만 `agent/`와 `demo.py`는 그 로직을 중복하지 않고 `src/`를 직접 호출합니다.
+
+`agent/`가 실제 에이전트 워크플로우입니다:
+
+- **`agent/tools.py`** — `src/`를 에이전트가 호출 가능한 동작으로 감쌉니다: 신호 로드, 윈도우 분할, 4가지 특징 표현 중 어느 것이든 추출, 학습된 체크포인트/번들 로드, CNN 또는 RF 추론 실행, 특징에 CORAL 정렬 적용, CNN 파인튜닝, 예측 결과 채점.
+- **`agent/policy.py`** — `data/agent_policy_table.csv`에 대한 상태 없는(stateless) 조회입니다: `(source_load, target_load)` 페어가 주어지면 검증된 모든 방법을 정확도순으로 정렬하고, 승자를 구체적인 도구 호출(어떤 체크포인트/번들을, `agent/tools.py`의 어떤 함수로)로 변환합니다. 또한 `KNOWN_SOURCE_LOADS = {0, 1}`을 정의합니다 — 실제 결과는 4개 부하 전체를 소스로 다루고 있음에도, 에이전트는 의도적으로 이 두 부하만을 사전 학습된 소스 도메인으로 알도록 제한되어 있으며, 이는 낯선 부하(2 또는 3)를 만났을 때 같은 도메인의 지름길 대신 전이 학습을 강제하기 위함입니다.
+- **`agent/react_loop.py`** — THOUGHT → ACTION → OBSERVATION → DECISION 루프: THOUGHT는 `policy.py`에 남은 방법 중 최선이 무엇인지 묻고, ACTION은 `tools.py`를 통해 그것을 실행하며, OBSERVATION은 예측 결과와 그 신뢰도를 기록하고, DECISION은 그것을 받아들이거나 (신뢰도가 너무 낮으면) 다음 순위 방법으로 넘어갑니다(최대 `max_attempts`회까지).
+- **`agent/diagnose.py`** — 엔트리 포인트인 `diagnose(signal, condition)`: 신호를 윈도우로 나누고, 주어진 `condition`에 대해 가장 잘 맞는 알려진 소스 도메인을 선택하거나(또는 명시적으로 지정된 소스 도메인을 `KNOWN_SOURCE_LOADS`로 검증하고), react 루프를 실행합니다.
+- **`demo.py`** — `diagnose()` 위에 구축된 Streamlit UI입니다; 아래 "데모 실행" 절을 참고하세요.
+
+솔직하게 짚어둘 점: 에이전트 루프에서 "적응"이란 항상 **이미 적응이 끝난 체크포인트를 선택**하는 것을 의미합니다 — `domain_adaptation_evaluation.ipynb`에서 오프라인으로 파인튜닝했거나 CORAL로 정렬해둔 것 — 업로드된 신호에 대해 실시간으로 적응을 계산하는 것이 아닙니다. 이를 온라인으로 수행하는 것도 여기서는 그다지 의미가 크지 않습니다: 지도 학습 방식의 파인튜닝은 진단용 업로드에는 없는 라벨을 필요로 하고, 파일 하나의 윈도우만으로 CORAL을 다시 계산해봐야 오프라인 번들에 이미 담겨 있는 통계량보다 더 노이즈가 심한 버전이 나올 뿐입니다.
+
 ## 데이터 레이아웃
 
 ```
@@ -137,14 +159,16 @@ data/
 ├── features_fault_freq.npz     # BPFO/BPFI/BSF 피크 크기(RMS 정규화 적용), (5601, 9), + 윈도우별 메타데이터
 ├── baseline_results.csv        # 베이스라인 1 & 2 정확도/매크로 F1, 부하 페어당 1행 (총 12개)
 ├── full_comparison_results.csv # 10가지 방법 전체 정확도/매크로 F1, 부하 페어당 1행 (총 12개)
+├── cwt_baseline_results.csv    # CWT+2D CNN 베이스라인 정확도/매크로 F1, 부하 페어당 1행 (총 12개)
 └── agent_policy_table.csv      # 넓은 테이블: 페어당 1행 × 방법 10열, 정확도만 — 에이전트 인계 산출물
 
-models/                          # gitignore 대상 아님 — 총 80개 파일
+models/                          # gitignore 대상 아님 — 총 84개 파일
 ├── baseline1_full_load{0-3}.pt          # 베이스라인 1 체크포인트 (4개)
 ├── baseline2_scarce_load{0-3}.pt        # 베이스라인 2 체크포인트 (4개)
 ├── adapted_cnn_{full,partial}_{S}to{T}.pt   # 적응 CNN 체크포인트 (2가지 모드 × 12페어 = 24개)
 ├── rf_noadapt_{fault_freq,fft,envelope}_load{0-3}.joblib  # 일반 RF 적응-없음 번들 (3가지 특징 세트 × 부하 4개 = 12개)
-└── coral_rf_{fault_freq,fft,envelope}_{S}to{T}.joblib  # CORAL+RF 번들 (3가지 특징 세트 × 12페어 = 36개)
+├── coral_rf_{fault_freq,fft,envelope}_{S}to{T}.joblib  # CORAL+RF 번들 (3가지 특징 세트 × 12페어 = 36개)
+└── cwt_baseline1_full_load{0-3}.pt      # CWT+2D CNN 베이스라인 체크포인트 (4개)
 
 assets/                          # gitignore 대상 아님 — README 차트 이미지
 ├── mean_accuracy.png
@@ -175,7 +199,7 @@ pip install -r requirements.txt
 
 `requirements.txt`의 `torch`는 플랫폼에 맞는 CUDA 빌드를 `pip`가 자동으로 찾아 설치합니다; CPU 전용 환경에서는 CPU 빌드가 설치되며, 어느 쪽이든 별도로 손댈 부분은 없습니다.
 
-실행 순서: `data_download.ipynb`(`data/` 채우기) → `data_splitting_preprocessing.ipynb` → `model_training.ipynb`(`models/`에 베이스라인 체크포인트 8개 생성) → `domain_adaptation_evaluation.ipynb`(`models/`에 체크포인트/번들 72개 추가, `assets/*.png` 재생성, `data/agent_policy_table.csv` 생성).
+실행 순서: `data_download.ipynb`(`data/` 채우기) → `data_splitting_preprocessing.ipynb` → `model_training.ipynb`(`models/`에 베이스라인 체크포인트 8개 생성) → `domain_adaptation_evaluation.ipynb`(`models/`에 체크포인트/번들 72개 추가, `assets/*.png` 재생성, `data/agent_policy_table.csv` 생성). `cwt_baseline_exploration.ipynb`는 선택 사항이며 나머지와 독립적입니다 — `data/windows_by_load.pkl`만 있으면 되고, 에이전트나 데모가 이것에 의존하지 않습니다.
 
 ## 데모 실행
 
@@ -193,39 +217,52 @@ streamlit run demo.py
 
 ## 아직 부족한 부분 / 다음 단계
 
-- **에이전트 그 자체** — 프로젝트 목표 대비 가장 큰 공백입니다. `data/agent_policy_table.csv`는 (source_load, target_load) 페어별로 어떤 방법을 선택할지 결정하는 정책에 데이터를 제공하기 위해 존재하지만, 아직 그 테이블을 읽고 행동하는 것은 아무것도 없습니다. 이것이 다음으로 계획된 작업입니다.
-- **목표 2 (신호 분석)**는 이제 추출 파이프라인(원시/FFT/포락선/고장 주파수 피크)은 갖췄지만, 그 위에서의 *분석*은 아직 없습니다 — 고장 유형/심각도별로 추출된 특징을 비교하는 시각화나 통계가 없고, BPFO/BPFI/BSF 피크가 실제로 정상과 고장 윈도우를 구분해내는지 검증도 없으며, 고전적인 시간 영역 통계 특징(RMS, 첨도, 왜도, crest factor)도 없습니다.
-- **목표 3 (방법 선택)**은 에이전트에 필요한 비교 데이터(`agent_policy_table.csv`)는 갖췄지만, "선택" 로직 자체는 아직 없습니다 — 그것이 위에서 말한 에이전트 작업입니다. 그 외 아직 시도하지 않은 것: `features_time`(4번째로 추출한 특징 세트)은 어디에도 사용된 적이 없고, `FE_time`(팬측) 신호나 DE+FE 결합 신호로 어떤 방법도 시도해본 적이 없습니다.
-- **목표 4 (전이 학습)**은 이제 실제 적응 방법 두 가지(파인튜닝 CNN, CORAL+랜덤 포레스트)가 있고 둘 다 경쟁력이 있지만, 둘 다 평균적으로 베이스라인 2를 **능가하지는** 못합니다 — "source 지식을 활용하는 것"이 "희소한 target 라벨을 그냥 직접 쓰는 것"보다 이 과제에서 실제로 얼마나 더 나은 가치를 주는지는 아직 입증되지 않았습니다. 아직 시도하지 않은 것: MMD/DANN 방식의 적대적 도메인 적응, 적응 CNN에서 동결 해제된 합성곱 블록과 헤드에 서로 다른 학습률 적용, 그리고 (FFT + fault-freq를 이어붙이는 식으로) 단일 특징 세트가 아니라 결합된 특징 세트에 대한 CORAL 적용.
-- **목표 1**은 완료되었습니다 — 범위는 구동측 고장 데이터와 정상 베이스라인 데이터로 한정합니다.
+- **목표 2 (신호 분석)**는 여전히 추출 파이프라인 위에서의 *분석*이 없습니다 — 고장 유형/심각도별로 추출된 특징을 비교하는 시각화나 통계가 없고, BPFO/BPFI/BSF 피크가 실제로 정상과 고장 윈도우를 구분해내는지 검증도 없으며, 고전적인 시간 영역 통계 특징(RMS, 첨도, 왜도, crest factor)도 없습니다.
+- **에이전트는 오프라인으로 미리 계산해 둔 결과 중에서만 선택할 뿐, 실시간으로 적응하지는 않습니다.** `react_loop.py`의 "적응" 단계는 이미 파인튜닝되었거나 CORAL로 정렬된 체크포인트를 불러올 뿐입니다; `agent/tools.py`는 `fine_tune_cnn()`/`coral_align()`을 제공하지만, 진단 경로 어디에서도 이를 호출하지 않습니다. 지도 학습 방식의 파인튜닝은 진단용 업로드에는 없는 라벨을 필요로 하고, 파일 하나의 윈도우만으로 CORAL을 다시 계산해봐야 오프라인 번들에 이미 담겨 있는 통계량보다 노이즈만 더 심한 버전이 나올 뿐입니다 — 의미 있는 온라인 적응을 하려면 단일 파일 진단이 아니라, 라벨이 없는 새로운 배포 배치 전체가 필요합니다.
+- **CWT + 2D CNN**(`cwt_baseline_exploration.ipynb`)은 제로샷 베이스라인으로만 테스트되었습니다(69.2%, 기존 원시 윈도우 CNN과 거의 동일) — 베이스라인 결과가 추가 연산 비용을 명확히 정당화하지 못했기 때문에, 다른 네 가지 특징 표현이 거쳤던 파인튜닝/CORAL 매트릭스에는 포함하지 않았습니다.
+- 기존 특징 표현들에 대해 아직 시도하지 않은 것: MMD/DANN 방식의 적대적 도메인 적응, 적응 CNN에서 동결 해제된 합성곱 블록과 헤드에 서로 다른 학습률 적용, (FFT + fault-freq를 이어붙이는 식의) 결합된 특징 세트에 대한 CORAL 적용, 그리고 `features_time`/`FE_time`(팬측)/DE+FE 결합 신호는 어디에도 사용된 적이 없습니다.
+- CNN이든 고전적 방법이든, 어떤 적응 방법도 평균적으로 베이스라인 2를 명확히 **능가하지는** 못합니다(위 핵심 요약 참고) — 이 과제에 한해서는, source 지식을 활용하는 것이 동일한 양의 희소한 target 데이터로 직접 학습하는 것보다 더 나은 결과를 가져다준다는 것이 아직 입증되지 않았습니다.
+- 목표 1과 목표 3은 완료되었습니다.
 
-## 에이전트를 위한 계획된 구조
+## 결론
 
-지금까지의 모든 것은 노트북 안에 존재합니다. 다음 단계에서는 이 노트북들에 있는 재사용 가능한 로직을 임포트 가능한 `src/` 패키지로 뽑아낸 뒤, 그 위에 실제 에이전트를 구축합니다:
+네 가지 목표 모두 처음부터 끝까지 달성되었습니다: 데이터 파이프라인은 CWRU 48kHz 드라이브 엔드 데이터셋을 다운로드하고, 라벨링하고, 탐색합니다; 특징 추출 파이프라인은 다섯 가지 표현(원시 윈도우, FFT, 엔벨로프, 고장 주파수 피크, CWT 스칼로그램)을 생성하며, 그 과정에서 실제 버그 두 개를 발견해 수정했습니다(FFT 빈 간격보다 좁았던 고장 주파수 허용 오차, 그리고 CORAL의 공분산 정렬을 약 300배 왜곡시키고 있던 누락된 RMS 정규화); 11가지 방법이 12개의 순서 있는 source→target 부하 페어 전체에 걸쳐 정면으로 비교되어 `data/agent_policy_table.csv`로 통합되었습니다; 그리고 두 가지 실제 적응 방법(파인튜닝된 CNN, CORAL+랜덤 포레스트)이 구현되었고 데이터 누출이 없음이 검증되었습니다 — 파인튜닝은 target의 **train** 분할에서만 클래스별로 층화 추출한 희소 서브샘플을 사용하며, 코드 검토와 실증적 중복 검사 양쪽 모두에서 보류된 **test** 분할과 전혀 겹치지 않음이 확인되었습니다.
+
+이에 더해 에이전트 자체도 구축되어 정상 작동합니다: `agent/policy.py`는 결과 테이블에 대한 상태 없는 조회이고, `agent/react_loop.py`는 THOUGHT → ACTION → OBSERVATION → DECISION 루프를 실행하여 검증된 최선의 방법을 선택하고 신뢰도가 낮으면 대안으로 폴백하며, `agent/diagnose.py`는 이를 하나의 `diagnose(signal, condition)` 호출로 묶어내고, `demo.py`는 그 위에 Streamlit UI를 올립니다 — 신호를 업로드하면 에이전트는 RPM으로부터 작동 조건을 추론하고, 의도적으로 작게 설정한 "알려진" source 도메인 집합(`KNOWN_SOURCE_LOADS = {0, 1}`)으로 스스로를 제한하여 부하 2와 3에서는 같은 도메인으로의 지름길이 아니라 실제 전이 학습이 작동하도록 하며, 예측 결과와 함께 전체 추론 과정을 보고합니다.
+
+가감 없이 그대로 보고해야 할 가장 중요한 결과는 이것입니다: 12개 페어 평균으로 볼 때 **어떤 적응 방법도 베이스라인 2를 능가하지 못합니다** (source 도메인을 전혀 사용하지 않고 target 부하의 클래스당 10% 희소 라벨 서브셋만으로 직접 학습한 모델). CNN partial-freeze 파인튜닝이 근접하긴 하지만(81.0% 대 82.7%), CORAL+RF와 RF-no-adapt도 FFT 특징에서 각각 준수한 성능을 보이지만(~78.5%), source 학습 모델이 target 도메인의 적은 라벨을 직접 사용하는 것보다 낫다는 전이 학습의 핵심 약속은 이 과제에서는 아직 입증되지 않았습니다. 이는 감출 실패가 아니라, 적응이 언제 복잡성을 감수할 가치가 있고 언제 없는지에 대한 진짜 유용한 발견입니다.
+
+## 한계
+
+- **결과가 이 데이터셋 밖으로 일반화되지 않습니다.** 여기의 모든 것은 하나의 베어링 종류(SKF 6205), 하나의 데이터 소스(CWRU), 네 가지 이산적인 부하/RPM 조건으로 이루어져 있습니다. 이 방법들 중 어느 것이든 — 혹은 "적응이 희소 라벨 베이스라인을 이기지 못한다"는 발견 자체든 — 다른 장비, 센서, 베어링 종류에서도 성립하는지는 테스트되지 않았으며, 새로운 라벨 데이터 없이는 답할 수 없습니다.
+- **에이전트는 실시간으로 적응하지 않습니다.** 위에서 다룬 대로, `react_loop.py`는 오프라인에서 파인튜닝되었거나 CORAL로 정렬된 체크포인트 중에서 **선택**만 할 뿐입니다; `agent/tools.py`의 `fine_tune_cnn()`/`coral_align()`은 존재하지만 진단 경로에서 호출되지 않습니다. 이는 단순히 최적화되지 않은 구석이 아니라 실제 기능적 공백입니다 — 진단용 업로드에는 지도 학습 파인튜닝에 필요한 라벨이 없고, 파일 하나로는 CORAL이 이미 캐시된 결과보다 더 나은 추정을 내놓기에 데이터가 너무 적습니다.
+- **`KNOWN_SOURCE_LOADS`는 시연을 위한 제약이지 기술적 한계가 아닙니다.** 에이전트를 부하 {0, 1}만 source 도메인으로 사용하도록 제한한 것은 부하 2/3에서 전이 학습이 실제로 작동하도록 강제하기 위한 의도적 선택입니다 — 4개 부하 전체를 source로 사용한 체크포인트와 결과는 이미 존재하며, 이 제약을 없애도 최소한 동등하거나 더 나은 성능을 낼 것입니다.
+- **데모의 실제 클래스 비교는 이 프로젝트 자체 파일에서만 작동합니다.** `demo.py`는 CWRU의 설명적 파일명에서 "실제 클래스"를 추론합니다 — 진짜로 새로운, 라벨이 없는 신호에 대해서는 진단이 맞았는지 확인할 방법이 없습니다.
+- **결과에는 약 1퍼센트 포인트의 실행 간 노이즈가 있습니다.** 직접 관찰된 사례: 동일한 시드로 CWT를 재학습했을 때 평균 정확도가 69.2%에서 68.4%로 바뀌었으며, 이는 GPU 학습의 비결정성 때문입니다. 이 README의 모든 정확도 수치는 소수점 세 자리까지 정확한 값이 아니라 근사치로 읽어야 합니다.
+- **자동화된 테스트 스위트가 없습니다.** 정확성은 수동으로 노트북을 재실행하고, 목적에 맞는 검증 스크립트를 작성하고, 직접 검사(예: train/test 누출 검사)하는 방식으로 확인되었습니다 — CI 기반 테스트가 아니므로, 현재는 회귀가 발생해도 노트북을 수동으로 다시 실행해야만 발견할 수 있습니다.
+
+## 저장소 구조
+
+위에서 설명한 부분들이 어떻게 맞물리는지에 대한 빠른 참조입니다 — 각 파일이 실제로 무엇을 하는지는 위의 "`src/` — 재사용 가능한 파이프라인 로직, 그리고 `agent/` — 진단 에이전트" 절을 참고하세요:
 
 ```
-src/                                # 재사용 가능한, 임포트 가능한 코드 — 에이전트가 사용
+src/                                # 재사용 가능한, 임포트 가능한 코드 — agent/와 demo.py가 사용
 ├── __init__.py
-├── data_loading.py                 # load_mat_file(), build_raw_df()
-├── preprocessing.py                # split_signal_train_test(), segment_signal()
-├── feature_extraction.py           # extract_time(), extract_fft(),
-│                                      extract_envelope(), extract_fault_freq()
-├── models.py                       # CNN1D 클래스 정의
+├── data_loading.py                 # load_mat_file(), build_raw_df(), label_file(), label_for_item()
+├── preprocessing.py                # split_signal_train_test(), segment_signal(), build_windows_by_load()
+├── feature_extraction.py           # extract_time(), extract_fft(), extract_envelope(),
+│                                      extract_fault_freq(), extract_cwt()
+├── models.py                       # CNN1D, CNN2D, WindowDataset, ScalogramDataset, train_cnn()
 ├── adaptation.py                   # fine_tune(), coral_transform()
 └── evaluate.py                     # 정확도/F1/혼동 행렬 헬퍼 함수
 
-agent/                               # 에이전트 워크플로우 — 실제 산출물
+agent/                               # 에이전트 워크플로우
 ├── __init__.py
 ├── tools.py                         # src/의 함수들을 에이전트가 호출 가능한 도구로 감쌈
-├── policy.py                        # comparison_table.csv를 로드하고,
-│                                       source→target → 최적 방법 룩업을 구성/조회
+├── policy.py                        # agent_policy_table.csv를 로드하고,
+│                                       source→target → 최적 방법 룩업을 구성/조회; KNOWN_SOURCE_LOADS
 ├── react_loop.py                    # THOUGHT/ACTION/OBSERVATION/DECISION 오케스트레이션
 └── diagnose.py                      # 메인 엔트리 포인트: diagnose(signal, condition)
 
 demo.py                              # Streamlit UI 데모 엔트리 포인트 — 실행: `streamlit run demo.py`
 ```
-
-- `src/`에는 현재 4개의 노트북(`data_download.ipynb`, `data_splitting_preprocessing.ipynb`, `model_training.ipynb`, `domain_adaptation_evaluation.ipynb`)에 흩어져 있는 로직을 임포트 가능한 모듈로 뽑아내어 담습니다 — 이를 통해 `agent/`가 노트북 코드를 중복 작성하지 않고 직접 호출할 수 있습니다.
-- `agent/policy.py`의 `comparison_table.csv`는 이 저장소에 이미 존재하는 **`data/agent_policy_table.csv`**를 가리킵니다 — `domain_adaptation_evaluation.ipynb`에서 이미 만들고 검증한 룩업 테이블입니다.
-- `agent/react_loop.py`는 THOUGHT/ACTION/OBSERVATION/DECISION 오케스트레이션 루프입니다 — 이것이 단순한 정적 룩업이 아니라 실제로 "에이전트"이게 만드는 부분입니다.
-- `agent/diagnose.py`는 호출자가 사용하는 엔트리 포인트입니다: `diagnose(signal, condition)`.

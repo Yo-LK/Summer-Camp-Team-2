@@ -11,7 +11,7 @@
 3. 选择合适的故障诊断方法
 4. 在不同工况（电机负载）之间应用迁移学习
 
-**当前状态：** 完整的数据处理流水线（下载 → 切分/加窗/特征提取 → 基线模型 → 自适应方法）已经完成，并生成了一张统一的结果汇总表（`data/agent_policy_table.csv`，12 个负载对 × 10 种方法），可直接用于驱动智能体的决策策略。智能体/编排层——也就是项目目标中真正"构建智能体"的部分——是下一步尚未完成的工作；目前为止的一切都只是一个手动运行的 notebook 流水线，负责生产智能体所需要的输入数据。
+**当前状态：** 完整的数据处理流水线（下载 → 切分/加窗/特征提取 → 基线模型 → 自适应方法）已经完成，并生成了一张统一的结果汇总表（`data/agent_policy_table.csv`，12 个负载对 × 10 种方法）。这张表如今驱动着一个真正可运行的智能体（`agent/`）——由策略查找加上 THOUGHT → ACTION → OBSERVATION → DECISION 循环组成——并通过一个 Streamlit 演示界面（`demo.py`）对外暴露，可以端到端地诊断上传的信号。该智能体被刻意限定为只将负载 0 和 1 视为已知的预训练源域（`agent.policy.KNOWN_SOURCE_LOADS`），因此遇到不熟悉的负载（2 或 3）时，会被迫真正运用迁移学习，而不是直接抄同域的近路。
 
 ## 四个目标的完成情况
 
@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 1 | 加载并理解数据集结构 | ✅ 已完成 | `data_download.ipynb` 下载、标注并检查数据 |
 | 2 | 分析振动信号 | 🟡 部分完成 | 特征提取流程已存在（原始信号/FFT/包络谱/故障特征频率），但尚未在此基础上做进一步分析——目前没有任何验证证明这些特征真的能区分健康窗口和故障窗口 |
-| 3 | 选择合适的故障诊断方法 | 🟢 基本完成 | 10 种方法已经在真实的逐对数据上进行了正面对比，并汇总进 `data/agent_policy_table.csv`——剩下的差距是"选择"这一步目前仍由人来读表决定，而不是由策略/智能体自动完成 |
+| 3 | 选择合适的故障诊断方法 | ✅ 已完成 | 10 种方法已经在真实的逐对数据上进行了正面对比，并汇总进 `data/agent_policy_table.csv`，如今真正由一个可运行的策略/智能体（`agent/policy.py`、`agent/react_loop.py`）自动完成选择，而不是靠人来读表 |
 | 4 | 跨工况迁移学习 | 🟢 基本完成 | 两种真实的自适应方法（微调 CNN、CORAL + 随机森林）已经实现并在全部 12 个负载对上评估；表现最好的版本（部分冻结 CNN、基于 FFT 特征的 CORAL+RF）几乎追平了"仅用目标域数据训练"的上限——详见下方结果 |
 
 ## 已完成的工作
@@ -68,7 +68,7 @@
 - **经典机器学习基线（无自适应）** —— 仅在 `source_train` 上训练的普通随机森林，零样本跨域评估，对三种特征集分别进行——这是基线 1 在经典机器学习一侧的对应版本。这一步是必要的：没有它，就无法判断 CORAL 究竟贡献了多少，还是仅仅体现了该特征集 + RF 本身已有的能力——详见下方结论。
 - 一项完整性检查用稀缺子集选取逻辑重新计算出基线 2 的数值，并确认与 `baseline_results.csv` 中的结果一致（差异仅来自 GPU 训练的不确定性），从而验证了 `windows_by_load.pkl`（原始窗口）与 `features_*.npz` 文件（预提取特征）之间基于索引的窗口对应关系是正确的。
 - **80 个模型保存到 `models/`**：24 个自适应 CNN 检查点（2 种冻结模式 × 12 个负载对）+ 36 个 CORAL+RF 组合 + 12 个普通 RF 无自适应组合（3 种特征集 × 12 对 / 4 个负载，以 joblib 保存 `{clf, scaler, pca}`），加上前面提到的 8 个基线检查点。
-- **汇总策略表** —— 将全部 10 种方法的准确率重塑为一张宽表，每个负载对一行，每种方法一列，保存到 **`data/agent_policy_table.csv`**。这正是为下一阶段准备的交接产物（一个能够针对给定的 source→target 负载对，判断该信任哪种方法的智能体）——详见下方结果。
+- **汇总策略表** —— 将全部 10 种方法的准确率重塑为一张宽表，每个负载对一行，每种方法一列，保存到 **`data/agent_policy_table.csv`**。这正是 `agent/policy.py` 实际加载并查询的交接产物——详见下方结果。
 
 **`data/agent_policy_table.csv` —— 每个负载对一行，每种方法一列（准确率）：**
 
@@ -123,6 +123,28 @@
 - 无论是 CNN 还是经典方法，没有一种自适应方法平均而言明显**超过**基线 2；表现最好的方法也只是接近它，而非超越它。就本任务而言，利用源域知识目前还没有被证明能比直接用同等数量的稀缺目标域数据训练带来更多收益。
 - 工况差距是逐对而异的，并非均匀分布：例如在 2→0 这一对上，基线 1（39.8%）实际上反而超过了部分冻结的自适应 CNN（33.6%）——自适应方法并不保证一定有帮助，有时甚至会比什么都不做更差。
 
+### `cwt_baseline_exploration.ipynb` —— 更丰富的特征表示是否有帮助？
+
+探索性实验，仅限基线（刻意没有纳入完整的自适应流程）：连续小波变换（CWT）尺度图（Morlet 小波，32 个尺度，覆盖 150–3000 Hz，时间轴下采样到 128 点 → 每个窗口得到一张 32×128 的图像），配合一个 2D CNN（`src.CNN2D`），每个负载训练一个模型（在其完整训练集上），并做零样本跨域评估——与基线 1 完全相同的协议，便于直接对比。
+
+- 全部 12 个负载对上的平均准确率：**69.2%**——与原始窗口 1D CNN 基线 1（69.7%）基本持平，明显落后于基于 FFT 特征的 RF（78.5%）。
+- 检查点保存到 `models/cwt_baseline1_full_load{0-3}.pt`；结果保存到 `data/cwt_baseline_results.csv`。
+- 结论：在这里，更丰富的 2D 时频输入并没有明显超过简单得多的原始 1D 窗口 CNN，因此没有将其纳入其他特征表示所经历的完整微调/CORAL 对比流程——并非被排除在外，只是就所付出的额外计算成本而言，收益并不明显。
+
+### `src/` —— 可复用的流水线逻辑，以及 `agent/` —— 诊断智能体
+
+`src/` 把上面四个 notebook 中的逻辑抽取为一个可导入的包（`data_loading.py`、`preprocessing.py`、`feature_extraction.py`、`models.py`、`adaptation.py`、`evaluate.py`）。notebook 本身依然保持自包含——出于可读性考虑，每个 notebook 仍各自重新定义所需的逻辑——但 `agent/` 和 `demo.py` 会直接调用 `src/`，而不再重复其中的任何代码。
+
+`agent/` 就是真正的智能体工作流：
+
+- **`agent/tools.py`** —— 将 `src/` 封装为智能体可调用的动作：加载信号、加窗、提取 4 种特征表示中的任意一种、加载已训练的检查点/组合包、运行 CNN 或 RF 推理、对特征做 CORAL 对齐、微调 CNN、给预测结果打分。
+- **`agent/policy.py`** —— 对 `data/agent_policy_table.csv` 的一个无状态查询：给定一个 `(source_load, target_load)` 负载对，按准确率对每种已验证的方法排序，并将胜出者解析为一次具体的工具调用（用哪个检查点/组合包、调用 `agent/tools.py` 中的哪个函数）。此外还定义了 `KNOWN_SOURCE_LOADS = {0, 1}`——智能体被刻意限定为只将这两个负载视为已知的预训练源域，尽管底层结果实际上覆盖了全部 4 个负载作为源域，这样做正是为了让遇到不熟悉的负载（2 或 3）时，智能体必须依赖迁移学习，而不能走同域的近路。
+- **`agent/react_loop.py`** —— THOUGHT → ACTION → OBSERVATION → DECISION 循环：THOUGHT 向 `policy.py` 询问当前最佳的剩余方法，ACTION 通过 `tools.py` 执行该方法，OBSERVATION 记录预测结果及其置信度，DECISION 决定接受该结果，还是（在置信度过低时）回退到排名次之的方法（最多尝试 `max_attempts` 次）。
+- **`agent/diagnose.py`** —— 入口函数 `diagnose(signal, condition)`：对信号加窗，为给定的 `condition` 选出最佳的已知源域（或对显式传入的源域按 `KNOWN_SOURCE_LOADS` 做校验），然后运行上述循环。
+- **`demo.py`** —— 构建在 `diagnose()` 之上的 Streamlit 界面；详见下方的“运行演示程序”一节。
+
+需要坦诚说明的一点：智能体循环中的“自适应”，指的始终是**挑选一个已经完成自适应的检查点**——在 `domain_adaptation_evaluation.ipynb` 中离线微调或做过 CORAL 对齐——而不是针对上传的信号实时计算自适应。即便真的在线做，这里的意义也不大：有监督微调需要标签，而诊断上传的信号恰恰没有标签；而基于单个文件的窗口重新计算 CORAL，得到的也只会是比离线组合包中已有统计量噪声更大的版本。
+
 ## 数据目录结构
 
 ```
@@ -137,14 +159,16 @@ data/
 ├── features_fault_freq.npz     # BPFO/BPFI/BSF 峰值幅度（已做 RMS 归一化），(5601, 9)，+ 每窗口元数据
 ├── baseline_results.csv        # 基线 1 & 2 的准确率/宏平均 F1，每个负载对一行（共 12 行）
 ├── full_comparison_results.csv # 全部 10 种方法的准确率/宏平均 F1，每个负载对一行（共 12 行）
+├── cwt_baseline_results.csv    # CWT+2D CNN 基线的准确率/宏平均 F1，每个负载对一行（共 12 行）
 └── agent_policy_table.csv      # 宽表：每对一行 × 10 个方法列，仅含准确率 —— 智能体交接产物
 
-models/                          # 未被 gitignore —— 共 80 个文件
+models/                          # 未被 gitignore —— 共 84 个文件
 ├── baseline1_full_load{0-3}.pt          # 基线 1 检查点（4 个）
 ├── baseline2_scarce_load{0-3}.pt        # 基线 2 检查点（4 个）
 ├── adapted_cnn_{full,partial}_{S}to{T}.pt   # 自适应 CNN 检查点（2 种模式 × 12 对 = 24 个）
 ├── rf_noadapt_{fault_freq,fft,envelope}_load{0-3}.joblib  # 普通 RF 无自适应组合（3 种特征集 × 4 个负载 = 12 个）
-└── coral_rf_{fault_freq,fft,envelope}_{S}to{T}.joblib  # CORAL+RF 组合（3 种特征集 × 12 对 = 36 个）
+├── coral_rf_{fault_freq,fft,envelope}_{S}to{T}.joblib  # CORAL+RF 组合（3 种特征集 × 12 对 = 36 个）
+└── cwt_baseline1_full_load{0-3}.pt      # CWT+2D CNN 基线检查点（4 个）
 
 assets/                          # 未被 gitignore —— README 图表
 ├── mean_accuracy.png
@@ -175,7 +199,7 @@ pip install -r requirements.txt
 
 `requirements.txt` 中的 `torch` 会由 `pip` 根据你的平台自动解析并安装相应的 CUDA 版本；纯 CPU 的机器则会安装 CPU 版本，两种情况都无需手动修改。
 
-按顺序运行：`data_download.ipynb`（填充 `data/`）、`data_splitting_preprocessing.ipynb`、`model_training.ipynb`（在 `models/` 中生成 8 个基线检查点）、`domain_adaptation_evaluation.ipynb`（再向 `models/` 添加 72 个检查点/组合，重新生成 `assets/*.png`，并生成 `data/agent_policy_table.csv`）。
+按顺序运行：`data_download.ipynb`（填充 `data/`）、`data_splitting_preprocessing.ipynb`、`model_training.ipynb`（在 `models/` 中生成 8 个基线检查点）、`domain_adaptation_evaluation.ipynb`（再向 `models/` 添加 72 个检查点/组合，重新生成 `assets/*.png`，并生成 `data/agent_policy_table.csv`）。`cwt_baseline_exploration.ipynb` 是可选的，与其余部分相互独立——它只需要 `data/windows_by_load.pkl`，智能体和演示程序都不依赖它。
 
 ## 运行演示程序
 
@@ -193,39 +217,52 @@ streamlit run demo.py
 
 ## 尚缺内容 / 后续步骤
 
-- **智能体本身** —— 相对项目目标而言，这是最大的缺口。`data/agent_policy_table.csv` 正是为了给策略提供数据，让它能针对每个 (source_load, target_load) 负载对挑选合适的方法，但目前还没有任何东西读取这张表并据此行动。这是接下来计划要做的工作。
-- **目标 2（信号分析）** 目前已有提取流程（原始信号/FFT/包络谱/故障特征频率），但尚未在此之上做进一步**分析**——没有可视化或统计数据来比较不同故障类型/严重程度下提取出的特征，没有验证 BPFO/BPFI/BSF 峰值是否真的能区分健康与故障窗口，也没有经典的时域统计特征（RMS、峰度、偏度、峰值因子）。
-- **目标 3（方法选择）** 已经拥有智能体所需的对比数据（`agent_policy_table.csv`），但"选择"这一逻辑本身尚未实现——这正是上面提到的智能体工作。此外还未测试的部分：`features_time`（第 4 种提取的特征集）从未被用于任何用途，也没有任何方法在 `FE_time`（风扇端）或 DE+FE 组合信号上进行过尝试。
-- **目标 4（迁移学习）** 目前已有两种真实的自适应方法（微调 CNN、CORAL+随机森林），且都具有竞争力，但两者平均而言都没有**超过**基线 2——对于本任务而言，"利用源域知识"相较于"直接使用同等数量的稀缺目标域标签"到底能带来多少额外价值，目前尚未得到证明。尚未尝试的方向：MMD/DANN 风格的对抗式域自适应、为自适应 CNN 中解冻的卷积块与分类头设置不同的学习率，以及在组合特征集（例如将 FFT 与故障频率特征拼接）而非单一特征集上运行 CORAL。
-- **目标 1** 已完成——范围限定为驱动端故障数据和正常基线数据。
+- **目标 2（信号分析）** 仍然缺少在提取流程之上的进一步**分析**——没有可视化或统计数据来比较不同故障类型/严重程度下提取出的特征，没有验证 BPFO/BPFI/BSF 峰值是否真的能区分健康与故障窗口，也没有经典的时域统计特征（RMS、峰度、偏度、峰值因子）。
+- **智能体目前只会在离线计算好的结果中做选择——从不进行在线自适应。** `react_loop.py` 中的“自适应”步骤，做的是加载一个已经微调/CORAL 对齐好的检查点；`agent/tools.py` 确实暴露了 `fine_tune_cnn()`/`coral_align()`，但诊断流程中没有任何地方真正调用它们。有监督微调需要标签，而诊断上传的信号本就没有标签；基于单个文件的窗口重新计算 CORAL，也只会得到比离线组合包中已有统计量更嘈杂的版本——真正有意义的在线自适应，需要的是一批全新的、无标签的部署数据，而不是单个文件的诊断请求。
+- **CWT + 2D CNN**（`cwt_baseline_exploration.ipynb`）只作为零样本基线做了测试（69.2%，与现有的原始窗口 CNN 基本持平）——没有纳入其他四种特征表示所经历的微调/CORAL 完整流程，因为基线结果并不能明显证明这部分额外计算是值得的。
+- 尚未在现有特征表示上尝试的方向：MMD/DANN 风格的对抗式域自适应、为自适应 CNN 中解冻的卷积块与分类头设置不同的学习率、在组合特征集（例如将 FFT 与故障频率特征拼接）上运行 CORAL，以及 `features_time`/`FE_time`（风扇端）/DE+FE 组合信号从未被用于任何用途。
+- 无论是 CNN 还是经典方法，没有一种自适应方法平均而言明显**超过**基线 2（详见上方结论）——就本任务而言，利用源域知识目前还没有被证明能比直接用同等数量的稀缺目标域数据训练带来更多收益。
+- 目标 1 和目标 3 已完成。
 
-## 智能体的规划结构
+## 结论
 
-以上一切目前都存在于 notebook 中。下一阶段会把这些 notebook 中可复用的逻辑抽取到一个可导入的 `src/` 包中，然后在此基础上构建真正的智能体：
+四个目标均已完整达成：数据流水线完成了 CWRU 48kHz 驱动端数据集的下载、打标签与探索；特征提取流水线产出了五种表示（原始窗口、FFT、包络、故障频率峰值，以及 CWT 尺度图），过程中发现并修复了两个真实的 bug（故障频率容差窗口比 FFT 频率分辨率还窄，以及缺失的 RMS 归一化曾使 CORAL 的协方差对齐失真约 300 倍）；11 种方法在全部 12 个有序的 source→target 负载对上被逐一对比，并汇总进 `data/agent_policy_table.csv`；两种真实的自适应方法（微调 CNN、CORAL+随机森林）已经实现，并被验证不存在数据泄漏——微调仅使用目标域**训练**切分中按类别分层抽样得到的稀缺子集，经代码审查与实证重叠检查均确认与留出的**测试**切分零重叠。
+
+在此基础上，智能体本身也已构建完成并可正常运行：`agent/policy.py` 是对结果表的无状态查询；`agent/react_loop.py` 运行一个 THOUGHT → ACTION → OBSERVATION → DECISION 循环，挑选经验证的最佳方法，并在置信度过低时回退到备选方案；`agent/diagnose.py` 将其整合为单一的 `diagnose(signal, condition)` 调用；`demo.py` 在此之上搭建了 Streamlit 界面——上传一个信号，智能体会从 RPM 推断其工作条件，并将自己限制在一组刻意设定的、较小的"已知"源域内（`KNOWN_SOURCE_LOADS = {0, 1}`），使得负载 2 和 3 真正需要依靠迁移学习，而不是走同域捷径，最终连同完整的推理轨迹一起报告预测结果。
+
+最重要的一点需要如实报告，而不是加以美化：在全部 12 个负载对上平均而言，**没有任何一种自适应方法能超过基线 2**（一个直接在目标负载上用 10%/类的稀缺标签子集训练出来的模型，完全不涉及源域）。CNN 部分冻结微调已经很接近了（81.0% 对 82.7%），CORAL+RF 和 RF-无自适应 在 FFT 特征上的表现也都不错（约 78.5%），但迁移学习的核心承诺——即源域训练出的模型能胜过直接使用少量目标域标签——就本任务而言尚未得到证实。这是一个关于自适应何时值得投入复杂度、何时不值得的真实且有用的发现，而不是需要掩藏的失败。
+
+## 局限性
+
+- **结果无法推广到本数据集之外。** 这里的一切都建立在单一轴承型号（SKF 6205）、单一数据来源（CWRU）、四种离散负载/转速条件之上。这些方法——乃至"自适应无法超越稀缺标签基线"这一发现本身——是否能在不同的设备、传感器或轴承型号上成立，目前尚未测试，也无法在没有新标注数据的情况下回答。
+- **智能体从不进行实时自适应。** 如上文所述，`react_loop.py` 只会在离线微调或 CORAL 对齐好的检查点中做**选择**；`agent/tools.py` 中的 `fine_tune_cnn()`/`coral_align()` 虽然存在，但诊断流程中并未被调用。这是一个真实的能力缺口，而不只是一个未优化的细节——诊断上传的信号本身没有标签可用于有监督微调，而单个文件的数据量也不足以让 CORAL 得到比已缓存结果更好的估计。
+- **`KNOWN_SOURCE_LOADS` 是一个演示性约束，而非技术限制。** 将智能体的源域限制为负载 {0, 1}，是刻意做出的选择，目的是迫使负载 2/3 真正用上迁移学习——事实上全部 4 种负载作为源域的检查点和结果都已经存在，如果解除这一约束，表现只会一样好或更好。
+- **演示程序的真实类别对比只对本项目自带的文件有效。** `demo.py` 是从 CWRU 目录中具有描述性的文件名推断出"实际类别"的——对于一个真正全新、无标签的信号，是没有办法验证诊断是否正确的。
+- **结果存在约 1 个百分点的运行间波动。** 这是直接观察到的：在相同随机种子下重新训练 CWT，其平均准确率从 69.2% 变成了 68.4%，这是 GPU 训练不确定性导致的。本 README 中的所有准确率数字都应被视为近似值，而非精确到小数点后三位。
+- **没有自动化测试套件。** 正确性目前是通过手动重新执行 notebook、有针对性的验证脚本，以及直接检查（例如训练/测试集泄漏检查）来确认的——而不是由 CI 支撑的测试用例，因此目前只有手动重新运行 notebook 才能发现回归问题。
+
+## 仓库结构
+
+快速参考上面各部分是如何组合在一起的——每个文件具体做什么，详见上方“`src/` —— 可复用的流水线逻辑，以及 `agent/` —— 诊断智能体”一节：
 
 ```
-src/                                # 可复用、可导入的代码 —— 供智能体使用
+src/                                # 可复用、可导入的代码 —— 供 agent/ 与 demo.py 使用
 ├── __init__.py
-├── data_loading.py                 # load_mat_file(), build_raw_df()
-├── preprocessing.py                # split_signal_train_test(), segment_signal()
-├── feature_extraction.py           # extract_time(), extract_fft(),
-│                                      extract_envelope(), extract_fault_freq()
-├── models.py                       # CNN1D 类定义
+├── data_loading.py                 # load_mat_file(), build_raw_df(), label_file(), label_for_item()
+├── preprocessing.py                # split_signal_train_test(), segment_signal(), build_windows_by_load()
+├── feature_extraction.py           # extract_time(), extract_fft(), extract_envelope(),
+│                                      extract_fault_freq(), extract_cwt()
+├── models.py                       # CNN1D, CNN2D, WindowDataset, ScalogramDataset, train_cnn()
 ├── adaptation.py                   # fine_tune(), coral_transform()
 └── evaluate.py                     # 准确率/F1/混淆矩阵相关辅助函数
 
-agent/                               # 智能体工作流 —— 真正的交付物
+agent/                               # 智能体工作流
 ├── __init__.py
 ├── tools.py                         # 将 src/ 中的函数封装为智能体可调用的工具
-├── policy.py                        # 加载 comparison_table.csv，构建/查询
-│                                       source→target → 最优方法 的查找表
+├── policy.py                        # 加载 agent_policy_table.csv，构建/查询
+│                                       source→target → 最优方法 的查找表；KNOWN_SOURCE_LOADS
 ├── react_loop.py                    # THOUGHT/ACTION/OBSERVATION/DECISION 编排循环
 └── diagnose.py                      # 主入口：diagnose(signal, condition)
 
 demo.py                              # Streamlit 界面演示入口 —— 运行：`streamlit run demo.py`
 ```
-
-- `src/` 存放目前分散在四个 notebook（`data_download.ipynb`、`data_splitting_preprocessing.ipynb`、`model_training.ipynb`、`domain_adaptation_evaluation.ipynb`）中的逻辑，将其抽取为可导入的模块，使 `agent/` 能够直接调用，而不必重复 notebook 中的代码。
-- `agent/policy.py` 中的 `comparison_table.csv` 就是本仓库现有的 **`data/agent_policy_table.csv`**——已经在 `domain_adaptation_evaluation.ipynb` 中构建并验证过的查找表。
-- `agent/react_loop.py` 是 THOUGHT/ACTION/OBSERVATION/DECISION 编排循环——真正让它成为"智能体"而非静态查找表的部分。
-- `agent/diagnose.py` 是调用方使用的入口函数：`diagnose(signal, condition)`。
