@@ -56,6 +56,14 @@ class CNN1D(nn.Module):
 
 
 class EmbeddingExtractor2D(nn.Module):
+    """Deliberately matched to EmbeddingExtractor's depth and channel progression (3 conv
+    blocks, 16->32->64, ~64x spatial compression before the global pool, same embedding_dim)
+    so CNN2D is a comparable-capacity 2D counterpart to CNN1D, not an arbitrarily bigger or
+    smaller model. Conv2d kernels carry more taps per channel pair than their Conv1d
+    equivalents at the same width (3x3=9 vs 3), so param count runs ~1.85x CNN1D's — that
+    gap is inherent to 2D vs 1D convolution, not an intentional capacity difference.
+    """
+
     def __init__(self, embedding_dim: int = EMBEDDING_DIM):
         super().__init__()
         self.conv = nn.Sequential(
